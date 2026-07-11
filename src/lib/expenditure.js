@@ -10,6 +10,7 @@
 // components model can replace the internals without touching callers. See README "The science".
 
 import { median, mean, dailyReduce, fillDaily, ewma, linreg, addDays, diffDays, enumerateDays } from "./series.js";
+import { mm, mT, madd, sym } from "./mat2.js";
 
 // Energy density of feline weight change. A cat in weight management moves mostly fat, so this
 // skews higher than the human ~7700 kcal/kg (3500/lb) blended figure. Tunable.
@@ -77,4 +78,107 @@ export function estimateExpenditure(weightEntries = [], intakeEntries = [], opts
     trendWeightKg, rateKgPerWeek, ratePctPerWeek, nDays: span, missingIntake,
     trend: wFilled.map((d, i) => ({ date: d.date, kg: trendSeries[i] })),
   };
+}
+
+/* ==================== v2: Kalman-filter estimator ==================== */
+// A 2-state Kalman filter over the same energy balance, state x = [W, E]:
+//   W_k = W_{k-1} + (I_k − E_{k-1})/ρ        (weight follows the energy balance)
+//   E_k = E_{k-1} + noise                     (expenditure drifts slowly — a random walk)
+// Measurement is the day's weight, z = W + noise. This gives, for free, a confidence band
+// (√P[E,E]) that tightens with data, robustness to a bad weigh-in, and — crucially — it
+// weights each day by its measurement precision (from the weigh-in method). The prediction-
+// error → estimate update is the same recursive shape MacroFactor describes; see README.
+
+const sigmaFor = (method) => (WEIGH_METHODS[method] || WEIGH_METHODS[DEFAULT_METHOD]).sigmaKg;
+
+// Collapse a day's weigh-ins to one measurement (z) and its variance (R), inverse-variance
+// weighting by each reading's method precision, after gating gross outliers off the median.
+export function dailyWeightWithVariance(entries, { outlierKg = 0.2 } = {}) {
+  const byDay = new Map();
+  for (const e of entries) {
+    if (!e || e.date == null || e.value == null || Number.isNaN(Number(e.value))) continue;
+    if (!byDay.has(e.date)) byDay.set(e.date, []);
+    byDay.get(e.date).push({ kg: Number(e.value), sigma: sigmaFor(e.method) });
+  }
+  const out = [];
+  for (const [date, reads] of byDay) {
+    const med = median(reads.map((r) => r.kg));
+    const kept = reads.filter((r) => Math.abs(r.kg - med) <= outlierKg);
+    const use = kept.length ? kept : reads;
+    let wsum = 0, psum = 0;
+    for (const r of use) { const prec = 1 / (r.sigma * r.sigma); wsum += r.kg * prec; psum += prec; }
+    out.push({ date, z: wsum / psum, R: 1 / psum, n: use.length });
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+// qE (kcal/day)²/day is the stability↔responsiveness knob: larger = tracks real changes
+// faster but noisier. Cats drift slowly, so it's set low. priorKcal seeds E from the vet
+// formula (the cold start), with a wide priorSd so data quickly takes over.
+// maxJumpKg gates physically impossible day-over-day swings (a spurious single reading):
+// real feline weight change is < ~15 g/day even on an aggressive plan, and gut-fill swings
+// are smaller than this, so anything past it is a bad read and skips the update.
+export const KALMAN_DEFAULTS = { rho: KCAL_PER_KG, qW: 1e-5, qE: 2.0, priorKcal: 200, priorSdKcal: 120, minDays: 10, maxMissing: 0.5, recentIntakeDays: 7, maxJumpKg: 0.3 };
+
+export function kalmanEstimateExpenditure(weightEntries = [], intakeEntries = [], opts = {}) {
+  const P = { ...KALMAN_DEFAULTS, ...opts };
+  const rho = P.rho;
+  const dW = dailyWeightWithVariance(weightEntries);
+  const empty = { enoughData: false, kcal: null, sd: null, low: null, high: null,
+    trendWeightKg: dW.length ? dW[dW.length - 1].z : null, rateKgPerWeek: null, ratePctPerWeek: null,
+    nDays: dW.length, missingIntake: null, trend: [] };
+  if (dW.length < 2) return empty;
+
+  const first = dW[0].date, last = dW[dW.length - 1].date;
+  const days = enumerateDays(first, last);
+  const dailyI = dailyReduce(intakeEntries, (v) => v.reduce((a, b) => a + b, 0));
+  const iByDay = new Map(dailyI.map((d) => [d.date, d.value]));
+  const present = days.filter((d) => iByDay.has(d));
+  const missingIntake = 1 - present.length / days.length;
+  const meanI = present.length ? mean(present.map((d) => iByDay.get(d))) : 0;
+  const intakeOn = (d) => (iByDay.has(d) ? iByDay.get(d) : meanI); // impute gaps with the mean
+  const wByDay = new Map(dW.map((d) => [d.date, d]));
+
+  const F = [[1, -1 / rho], [0, 1]];
+  const Q = [[P.qW, 0], [0, P.qE]];
+  let x = [wByDay.get(first).z, P.priorKcal];
+  let Pcov = [[wByDay.get(first).R, 0], [0, P.priorSdKcal * P.priorSdKcal]];
+  const trend = [{ date: first, kg: x[0] }];
+
+  for (let k = 1; k < days.length; k++) {
+    const d = days[k];
+    // predict
+    const xPred = [x[0] + (intakeOn(d) - x[1]) / rho, x[1]];
+    const Ppred = madd(mm(mm(F, Pcov), mT(F)), Q);
+    // update on a scalar weight measurement (H = [1, 0]) when we have one that isn't a
+    // physically impossible jump from where we expect her to be
+    const meas = wByDay.get(d);
+    if (meas && Math.abs(meas.z - xPred[0]) <= P.maxJumpKg) {
+      const { z, R } = meas;
+      const S = Ppred[0][0] + R;
+      const K0 = Ppred[0][0] / S, K1 = Ppred[1][0] / S;
+      const y = z - xPred[0]; // innovation = the prediction error
+      x = [xPred[0] + K0 * y, xPred[1] + K1 * y];
+      Pcov = sym([
+        [(1 - K0) * Ppred[0][0], (1 - K0) * Ppred[0][1]],
+        [Ppred[1][0] - K1 * Ppred[0][0], Ppred[1][1] - K1 * Ppred[0][1]],
+      ]);
+    } else {
+      x = xPred; Pcov = Ppred; // no reading, or a rejected outlier → prediction only
+    }
+    trend.push({ date: d, kg: x[0] });
+  }
+
+  const kcal = x[1];
+  const sd = Math.sqrt(Pcov[1][1]);
+  const recent = present.slice(-P.recentIntakeDays);
+  const recentI = recent.length ? mean(recent.map((d) => iByDay.get(d))) : meanI;
+  const rateKgPerWeek = ((recentI - kcal) / rho) * 7;
+  const trendWeightKg = x[0];
+  const ratePctPerWeek = trendWeightKg > 0 ? (rateKgPerWeek / trendWeightKg) * 100 : 0;
+  const span = diffDays(first, last) + 1;
+  const enoughData = span >= P.minDays && present.length >= 2 && missingIntake <= P.maxMissing;
+
+  return { enoughData, kcal, sd, low: kcal - 1.96 * sd, high: kcal + 1.96 * sd,
+    trendWeightKg, rateKgPerWeek, ratePctPerWeek, nDays: span, missingIntake, trend };
 }

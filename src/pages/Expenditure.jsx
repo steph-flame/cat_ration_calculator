@@ -41,7 +41,14 @@ export default function Expenditure() {
 
         {/* estimate */}
         <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-5 mb-4">
-          <div style={{ color: C.sub }} className="text-xs uppercase tracking-widest font-mono">Measured maintenance</div>
+          <div className="flex items-center justify-between">
+            <div style={{ color: C.sub }} className="text-xs uppercase tracking-widest font-mono">Measured maintenance</div>
+            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }} title="v2 = Kalman filter (confidence band, precision-weighted). v1 = EWMA + regression.">
+              {[["v2", "Kalman"], ["v1", "EWMA"]].map(([a, lbl]) => (
+                <button key={a} onClick={() => setExpSettings({ algo: a })} style={{ background: expSettings.algo === a ? C.spruce : "transparent", color: expSettings.algo === a ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
+              ))}
+            </div>
+          </div>
           {e.enoughData ? (
             <>
               <div className="flex items-baseline gap-2 mt-1">
