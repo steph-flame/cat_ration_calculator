@@ -17,6 +17,21 @@ export const KCAL_PER_KG = 8000;
 
 export const DEFAULTS = { rho: KCAL_PER_KG, windowDays: 28, minDays: 10, alpha: 0.25, maxMissing: 0.5 };
 
+// How a weigh-in was measured. `sigmaKg` is the rough per-reading measurement noise —
+// captured now, and reserved for precision-weighting (WLS) in the v2 filter. Mixing
+// methods risks a systematic between-method offset that looks like a weight jump, so the
+// UI nudges toward picking one.
+export const WEIGH_METHODS = {
+  petScale:    { label: "Pet scale",     hint: "dedicated pet / baby scale",  sigmaKg: 0.01 },
+  litterRobot: { label: "Litter-Robot",  hint: "read from the Whisker app",   sigmaKg: 0.03 },
+  difference:  { label: "Scale − you",   hint: "you, then you + cat, subtract", sigmaKg: 0.15 },
+  other:       { label: "Other",         hint: "",                            sigmaKg: 0.05 },
+};
+export const DEFAULT_METHOD = "petScale";
+
+// How the reading got into the app.
+export const WEIGH_SOURCES = { manual: "manual", litterRobot: "litter-robot" };
+
 // weightEntries: [{ date, value: kg }]   intakeEntries: [{ date, value: kcal }]
 // (multiple per day are fine — weight is median-reduced, intake summed.)
 export function estimateExpenditure(weightEntries = [], intakeEntries = [], opts = {}) {

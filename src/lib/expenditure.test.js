@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateExpenditure } from "./expenditure.js";
+import { estimateExpenditure, WEIGH_METHODS, DEFAULT_METHOD } from "./expenditure.js";
 import { addDays } from "./series.js";
 
 // Build a synthetic history: constant daily intake, weight moving at the exact rate that
@@ -63,5 +63,21 @@ describe("robustness", () => {
     const r = estimateExpenditure([], []);
     expect(r.enoughData).toBe(false);
     expect(r.kcal).toBeNull();
+  });
+});
+
+describe("weigh-method metadata (contract for precision-weighting later)", () => {
+  it("every method carries a label and a positive per-reading sigma", () => {
+    for (const m of Object.values(WEIGH_METHODS)) {
+      expect(typeof m.label).toBe("string");
+      expect(m.sigmaKg).toBeGreaterThan(0);
+    }
+  });
+  it("the subtraction method is the noisiest, the pet scale the tightest", () => {
+    expect(WEIGH_METHODS.difference.sigmaKg).toBeGreaterThan(WEIGH_METHODS.litterRobot.sigmaKg);
+    expect(WEIGH_METHODS.petScale.sigmaKg).toBeLessThan(WEIGH_METHODS.litterRobot.sigmaKg);
+  });
+  it("the default method exists", () => {
+    expect(WEIGH_METHODS[DEFAULT_METHOD]).toBeTruthy();
   });
 });

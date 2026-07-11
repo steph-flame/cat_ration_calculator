@@ -4,6 +4,7 @@ import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
 import { kcalPerG } from "../lib/foods.js";
 import { planWeightLoss, RATE } from "../lib/weightPlan.js";
+import { WEIGH_METHODS, DEFAULT_METHOD, WEIGH_SOURCES } from "../lib/expenditure.js";
 import { useApp } from "../state/AppState.jsx";
 import FoodSearch from "../components/FoodSearch.jsx";
 import { Field, NumInput, Note } from "../components/primitives.jsx";
@@ -127,26 +128,53 @@ function Stat({ label, value }) {
 }
 
 /* ---------- weight log ---------- */
+const methodLabel = (m) => (WEIGH_METHODS[m] || WEIGH_METHODS[DEFAULT_METHOD]).label;
+
 function WeightLog({ log }) {
   const [date, setDate] = useState(today);
   const [kg, setKg] = useState("");
+  const [method, setMethod] = useState(DEFAULT_METHOD);
   const recent = [...log.items].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 8);
-  const addEntry = () => { if (num(kg) > 0) { log.add({ date, kg: num(kg) }); setKg(""); } };
+  const addEntry = () => {
+    if (num(kg) > 0) { log.add({ date, kg: num(kg), method, source: WEIGH_SOURCES.manual }); setKg(""); }
+  };
+  // Mixing measurement methods introduces a between-method offset that reads as a weight jump.
+  const methodsUsed = new Set(log.items.map((e) => e.method).filter(Boolean));
+
   return (
     <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
       <h2 className="font-medium mb-1">Weight log</h2>
-      <p style={{ color: C.faint }} className="text-xs mb-3">One or more weigh-ins per day (a litter-box scale's readings get median-averaged). Manual for now; automated feeds later.</p>
+      <p style={{ color: C.faint }} className="text-xs mb-3">One or more weigh-ins per day (multiple readings get median-averaged). Manual entry now; Litter-Robot sync appends to the same log later.</p>
+
+      {/* how it was measured */}
+      <div className="mb-2">
+        <div style={{ color: C.sub }} className="text-xs mb-1">Measured with</div>
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(WEIGH_METHODS).map(([key, m]) => (
+            <button key={key} onClick={() => setMethod(key)}
+              style={{ borderColor: method === key ? C.spruce : C.line, background: method === key ? C.spruceSoft : "transparent", color: method === key ? C.spruce : C.sub }}
+              className="text-xs border rounded-lg px-2 py-1 font-mono">{m.label}</button>
+          ))}
+        </div>
+        {WEIGH_METHODS[method].hint && <p style={{ color: C.faint }} className="text-xs mt-1">{WEIGH_METHODS[method].hint}{method === "difference" && " — noisiest; the app leans on the median of several reads"}</p>}
+      </div>
+
       <div className="flex items-end gap-2">
         <label className="block flex-1"><div style={{ color: C.sub }} className="text-xs mb-1">Date</div>
           <input type="date" value={date} onChange={(ev) => setDate(ev.target.value)} style={{ borderColor: C.line, color: C.ink }} className="w-full border rounded-lg px-2.5 py-1.5 bg-white text-sm font-mono outline-none" /></label>
         <div className="w-24"><Field label="Weight" suffix="kg"><NumInput value={kg} onChange={setKg} step="0.01" /></Field></div>
         <button onClick={addEntry} style={{ background: C.spruce }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
       </div>
+
+      {methodsUsed.size > 1 && (
+        <Note>This log mixes measurement methods ({[...methodsUsed].map(methodLabel).join(", ")}). Different methods can sit a bit apart, which reads as a jump in the trend — prefer sticking to one where you can.</Note>
+      )}
+
       {recent.length > 0 && (
         <div className="mt-3 space-y-1">
           {recent.map((en) => (
             <div key={en.id} className="flex items-center justify-between text-sm font-mono py-1 border-b last:border-0" style={{ borderColor: C.line }}>
-              <span style={{ color: C.sub }}>{en.date}</span>
+              <span style={{ color: C.sub }}>{en.date} {en.method && <span style={{ color: C.faint }} className="text-xs">· {methodLabel(en.method)}</span>}{en.source === WEIGH_SOURCES.litterRobot && <span style={{ color: C.spruce }} className="text-xs"> · auto</span>}</span>
               <span className="flex items-center gap-3"><span style={{ color: C.ink }} className="tabular-nums">{r1(en.kg)} kg</span>
                 <button onClick={() => log.remove(en.id)} style={{ color: C.faint }}><X size={14} /></button></span>
             </div>
