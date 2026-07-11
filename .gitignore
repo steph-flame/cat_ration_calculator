@@ -4,6 +4,11 @@ dist-ssr
 *.local
 .DS_Store
 
+# Python research bench
+research/venv/
+__pycache__/
+*.pyc
+
 # Editor / tooling
 .vscode/*
 !.vscode/extensions.json

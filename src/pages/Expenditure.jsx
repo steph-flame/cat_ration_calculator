@@ -16,6 +16,7 @@ export default function Expenditure() {
   const { p, t, expenditure, weightLog, intakeLog, library, expSettings, setExpSettings } = useApp();
   const e = expenditure;
   const kitten = t.age > 0 && t.age < 12;
+  const algoName = { v3: "unobserved-components", v2: "Kalman filter", v1: "EWMA + regression" }[expSettings.algo];
 
   // Maintenance: measured if we have enough data, else the vet-formula fallback.
   const maintenance = e.enoughData ? e.kcal : t.refs.maintain;
@@ -43,8 +44,8 @@ export default function Expenditure() {
         <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-5 mb-4">
           <div className="flex items-center justify-between">
             <div style={{ color: C.sub }} className="text-xs uppercase tracking-widest font-mono">Measured maintenance</div>
-            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }} title="v2 = Kalman filter (confidence band, precision-weighted). v1 = EWMA + regression.">
-              {[["v2", "Kalman"], ["v1", "EWMA"]].map(([a, lbl]) => (
+            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }} title="v3 = unobserved-components (separates gut-fill transients). v2 = Kalman. v1 = EWMA + regression.">
+              {[["v3", "v3"], ["v2", "v2"], ["v1", "v1"]].map(([a, lbl]) => (
                 <button key={a} onClick={() => setExpSettings({ algo: a })} style={{ background: expSettings.algo === a ? C.spruce : "transparent", color: expSettings.algo === a ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
               ))}
             </div>
@@ -62,7 +63,7 @@ export default function Expenditure() {
                 <Stat label="Rate" value={`${e.ratePctPerWeek > 0 ? "+" : ""}${r1(e.ratePctPerWeek)} %/wk`} />
               </div>
               <p style={{ color: C.faint }} className="text-xs mt-3 leading-snug">
-                vs. the vet formula's {r0(t.refs.maintain)} kcal maintenance. Based on {e.nDays} days
+                vs. the vet formula's {r0(t.refs.maintain)} kcal maintenance. {algoName}, {e.nDays} days
                 {e.missingIntake > 0 && `, ${r0(e.missingIntake * 100)}% of intake days imputed`}.
               </p>
             </>

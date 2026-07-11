@@ -2,14 +2,14 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { num, r1 } from "../lib/util.js";
 import { computeTargets, seedProfile, bcsToPct, pctToBcs } from "../lib/nutrition.js";
 import { makeRationSeed, makeStartSeed, makeLibrarySeed, isCompleteFood, toLibraryEntry } from "../lib/foods.js";
-import { estimateExpenditure, kalmanEstimateExpenditure } from "../lib/expenditure.js";
+import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure } from "../lib/expenditure.js";
 import { usePersistence, store } from "../lib/storage.js";
 import { useFoodList } from "../hooks/useFoodList.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
 import { useLog } from "../hooks/useLog.js";
 
 const defaultTr = () => ({ on: false, days: 7, timelineUnit: "g" });
-const defaultExpSettings = () => ({ pctPerWeek: 1, energyBasis: "formula", algo: "v2" });
+const defaultExpSettings = () => ({ pctPerWeek: 1, energyBasis: "formula", algo: "v3" });
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -56,10 +56,10 @@ export function AppProvider({ children }) {
   const expenditure = useMemo(() => {
     const w = weightLog.items.map((e) => ({ date: e.date, value: e.kg, method: e.method }));
     const i = intakeLog.items.map((e) => ({ date: e.date, value: e.kcal }));
-    const opts = { priorKcal: t.refs.maintain }; // cold-start the Kalman prior from the vet formula
-    return expSettings.algo === "v1"
-      ? estimateExpenditure(w, i, opts)
-      : kalmanEstimateExpenditure(w, i, opts);
+    const opts = { priorKcal: t.refs.maintain }; // cold-start the filter prior from the vet formula
+    if (expSettings.algo === "v1") return estimateExpenditure(w, i, opts);
+    if (expSettings.algo === "v2") return kalmanEstimateExpenditure(w, i, opts);
+    return ucEstimateExpenditure(w, i, opts); // v3 (default)
   }, [weightLog.items, intakeLog.items, expSettings.algo, t.refs.maintain]);
 
   // Profile helpers (unchanged semantics, just centralized).

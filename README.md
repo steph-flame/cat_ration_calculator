@@ -26,10 +26,14 @@ tools that share one profile, food library, and history.
   expenditure (below).
 
 **Energy expenditure** (adaptive, "MacroFactor for cats")
-- Log body weight (many weigh-ins/day are median-averaged) and what you dispensed;
-  the app **back-calculates the real maintenance requirement** from energy balance,
-  with a **confidence band** that tightens as data builds and a vet-formula fallback
-  until there's enough.
+- Log body weight (many weigh-ins/day are median-averaged, tagged by measurement
+  method) and what you dispensed; the app **back-calculates the real maintenance
+  requirement** from energy balance, with a **confidence band** that tightens as data
+  builds and a vet-formula fallback until there's enough.
+- Three selectable estimators: **v1** EWMA + regression, **v2** a Kalman filter
+  (precision-weighted by weigh-in method, with a real confidence band), and **v3**
+  (default) an unobserved-components model that separates gut-fill/hydration transients
+  from genuine expenditure change — ~2× less day-to-day jitter than v2.
 - **Safe weight-loss plan** — a *calorie* deficit off maintenance, sized to a vet-safe
   rate (0.5–2%/week, default 1%), with a nutritional floor, an honest projected rate,
   and a weeks-to-ideal estimate. Disabled for kittens (growth confounds the balance).
@@ -54,8 +58,14 @@ tools that share one profile, food library, and history.
   steady grazing-leftover fraction cancels, since the estimate calibrates dispensed
   calories against the weight response. This mirrors the described behaviour of
   [MacroFactor's expenditure algorithm](https://macrofactor.com/expenditure-v3/)
-  (a recursive prediction-error estimator); the internals here are a transparent v1
-  (EWMA trend + OLS rate), with a stable interface for a Kalman/state-space upgrade.
+  (a recursive prediction-error estimator). Three transparent estimators share one
+  interface: **v1** EWMA + OLS rate; **v2** a 2-state Kalman filter `[W, E]` with a
+  real confidence band and per-method precision weighting; **v3** (default) a 3-state
+  unobserved-components model `[W, E, T]` that adds a mean-reverting transient `T` for
+  gut-fill/hydration, so a bump gets attributed to `T` (which decays) rather than to
+  expenditure. v3 was prototyped and tuned in Python (`research/`) — where it showed
+  ~2× lower estimate jitter than v2 under transients without being worse on clean data
+  — then ported to JS with the same synthetic-data tests as a cross-language contract.
 - Safe loss rate **0.5–2%/week** for cats (conservative — cats are prone to hepatic
   lipidosis if slimmed too fast); starting/floor intake ~`0.8 × RER(ideal)`.
 
@@ -81,7 +91,8 @@ src/
     nutrition.js    energy model — RER, MER, BCS↔%, life-stage goals, targets
     foods.js        food math (splits, transitions, energy density) + library
     series.js       generic time-series math (median, daily-reduce, gap-fill, ewma, linreg)
-    expenditure.js  adaptive back-calc of maintenance from weight + intake
+    mat.js          small dense linear algebra (for the Kalman / state-space filters)
+    expenditure.js  adaptive back-calc of maintenance (v1 EWMA, v2 Kalman, v3 UC)
     weightPlan.js   safe-deficit prescription (rate → calorie target, floor, timeline)
     storage.js      persistence only — one JSON blob in localStorage
     util.js         tiny shared number/id helpers
@@ -98,6 +109,8 @@ src/
   components/       RationRow, FoodSearch, SavedFoods, primitives
   App.jsx           provider + router shell
   theme.js          palette
+research/
+  v3_expenditure.py Python prototype that validated & tuned the v3 model before porting
 ```
 
 Layers never cross the wrong way: `storage.js` knows nothing about cats; the `lib/`
@@ -122,7 +135,7 @@ Stack: React 18, Vite, Tailwind CSS, lucide-react, Vitest.
 ### Tests
 
 Every `lib/` module is pure, so the claims the app makes are pinned by assertions
-rather than re-verified by hand (`src/lib/*.test.js`, ~50 cases), including:
+rather than re-verified by hand (`src/lib/*.test.js`, ~75 cases), including:
 
 - maintenance always uses the adult factor, never the kitten growth factor;
 - the growth factor tapers from 2.5 (≤4 mo) to the adult factor (12 mo);
@@ -130,8 +143,10 @@ rather than re-verified by hand (`src/lib/*.test.js`, ~50 cases), including:
 - `distribute` returns integers that sum exactly to the target;
 - `waterfall` keeps a split at 100% — including dragging the last row;
 - a transition day's kcal column sums to the target at every blend fraction;
-- `estimateExpenditure` recovers a known maintenance value (loss, gain, and stable
-  cases) and medians away intra-day weigh-in noise;
+- all three estimators recover a known maintenance value (v1 loss/gain/stable; v2 & v3
+  from a wrong prior, through gut-fill transients and sensor noise);
+- v2 tightens its confidence band with data, weights looser weigh-in methods less, and
+  rejects a spurious spike; v3 wobbles less than v2 on the same noisy data;
 - `planWeightLoss` sizes the deficit to the chosen rate, clamps to 0.5–2%/week, holds
   a nutritional floor, and reports the *actual* rate it delivers when floored.
 
