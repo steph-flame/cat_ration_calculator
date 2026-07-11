@@ -1,13 +1,16 @@
 # Cat Ration Calculator
 
-Work out **how much to feed a cat**: a daily energy target derived from the animal,
-grams from a food split you control, and a day-by-day transition schedule for
-switching foods. It shows its work — every number traces back to a formula.
+Work out **how much to feed a cat**, two ways: a vet-formula energy target, or the
+cat's *measured* maintenance back-calculated from its weight trend and intake — plus
+a food split into gram portions and a transition schedule. It shows its work — every
+number traces back to a formula or a logged data point.
 
-Built for one cat originally, but the model is general.
+Built for one cat originally, but the model is general. A home screen routes to two
+tools that share one profile, food library, and history.
 
 ## What it does
 
+**Ration planner**
 - **Target energy** from resting energy requirement (RER) × a life-stage feline
   factor (MER), with goals that adapt to age: support growth, gentle trim, active
   loss, maintain, gain, or a custom target you slide between the presets.
@@ -16,10 +19,21 @@ Built for one cat originally, but the model is general.
   kcal/kg, wet by kcal/can). Grams, cans, and cups fall out automatically, plus a
   fridge-life warning when a can outlasts the days an opened can keeps.
 - **Saved foods with search** — every food you enter is remembered and offered by
-  name the next time you add one. The library is fully editable and seeded with a
-  few verified starter foods.
+  name the next time you add one. Fully editable, seeded with verified starters.
 - **Transition planner** — an even ramp from your current blend to the new ration
   over N days, in grams or kcal, holding total energy constant.
+- **Energy basis toggle** — drive the target from the vet formula *or* the measured
+  expenditure (below).
+
+**Energy expenditure** (adaptive, "MacroFactor for cats")
+- Log body weight (many weigh-ins/day are median-averaged) and what you dispensed;
+  the app **back-calculates the real maintenance requirement** from energy balance,
+  with a **confidence band** that tightens as data builds and a vet-formula fallback
+  until there's enough.
+- **Safe weight-loss plan** — a *calorie* deficit off maintenance, sized to a vet-safe
+  rate (0.5–2%/week, default 1%), with a nutritional floor, an honest projected rate,
+  and a weeks-to-ideal estimate. Disabled for kittens (growth confounds the balance).
+
 - Everything **saves automatically** on your device (localStorage).
 
 > A planning aid, not veterinary advice. Re-weigh every 3–4 weeks and adjust.
@@ -33,12 +47,27 @@ Built for one cat originally, but the model is general.
 - Note: `vetcalculators.com` lists 1.6 / 1.8 for neutered / intact — those are
   **canine** factors and overestimate for a cat.
 
-Check the factors yourself against the primary sources:
+**Adaptive expenditure** (the energy-expenditure tool):
+- Energy balance: `expenditure ≈ mean intake − ρ × (rate of weight change)`, over a
+  trailing window, where `ρ ≈ 8000 kcal/kg` (a cat in weight management loses mostly
+  fat, so this skews above the human ~7700 blended figure). Log *dispensed* grams — a
+  steady grazing-leftover fraction cancels, since the estimate calibrates dispensed
+  calories against the weight response. This mirrors the described behaviour of
+  [MacroFactor's expenditure algorithm](https://macrofactor.com/expenditure-v3/)
+  (a recursive prediction-error estimator); the internals here are a transparent v1
+  (EWMA trend + OLS rate), with a stable interface for a Kalman/state-space upgrade.
+- Safe loss rate **0.5–2%/week** for cats (conservative — cats are prone to hepatic
+  lipidosis if slimmed too fast); starting/floor intake ~`0.8 × RER(ideal)`.
+
+Check the numbers yourself against the primary sources:
 
 - [2021 AAHA Nutrition and Weight Management Guidelines — resource center](https://www.aaha.org/resources/2021-aaha-nutrition-and-weight-management-guidelines/resource-center/)
-  (see "How to Calculate Energy Requirements" and the BCS ↔ overweight-% chart).
+  ("How to Calculate Energy Requirements" and the BCS ↔ overweight-% chart).
 - [Pet Nutrition Alliance — Calorie Calculator](https://petnutritionalliance.org/resources/calorie-calculator)
   (the MER factor table this tool mirrors).
+- [AAHA — helping a cat lose weight](https://www.aaha.org/resources/feline-fitness-how-to-help-your-cat-lose-weight/)
+  and [APOP weight-loss guidance](https://www.petobesityprevention.org/weight-loss-cats)
+  (safe rate + hepatic lipidosis risk).
 
 The energy factors are all editable in the app under "energy factors."
 
@@ -48,25 +77,34 @@ Storage and semantics are kept in separate modules that never import each other:
 
 ```
 src/
-  lib/
-    nutrition.js   energy model — RER, MER, life-stage goals, targets (pure)
-    foods.js       food math (splits, transitions, energy density) + library (pure)
-    storage.js     persistence only — one JSON blob in localStorage
-    util.js        tiny shared number/id helpers
+  lib/            pure logic — no React, no I/O (so it's all unit-tested)
+    nutrition.js    energy model — RER, MER, BCS↔%, life-stage goals, targets
+    foods.js        food math (splits, transitions, energy density) + library
+    series.js       generic time-series math (median, daily-reduce, gap-fill, ewma, linreg)
+    expenditure.js  adaptive back-calc of maintenance from weight + intake
+    weightPlan.js   safe-deficit prescription (rate → calorie target, floor, timeline)
+    storage.js      persistence only — one JSON blob in localStorage
+    util.js         tiny shared number/id helpers
+  state/
+    AppState.jsx    one provider owning all persisted state + derived values
   hooks/
     useFoodList.js     an editable food list (the ration, the start blend)
     useFoodLibrary.js  the saved-food library: auto-save, edit, search
-  components/
-    RationRow.jsx   one food row
-    FoodSearch.jsx  the name field + live search over saved foods
-    SavedFoods.jsx  view / edit / delete saved foods
-    primitives.jsx  shared inputs
-  App.jsx           orchestration + layout
+    useLog.js          generic dated-entry log (weight log, intake log)
+    useHashRoute.js    dependency-free hash router (GitHub-Pages-safe)
+  pages/
+    Home.jsx        landing → the two tools
+    RationPlanner.jsx / Expenditure.jsx   UI only, read shared state via useApp()
+  components/       RationRow, FoodSearch, SavedFoods, primitives
+  App.jsx           provider + router shell
   theme.js          palette
 ```
 
-`storage.js` exposes an async `{ load, save, clear }` interface, so swapping
-localStorage for a backend (fetch, IndexedDB, a sync service) is a one-file change.
+Layers never cross the wrong way: `storage.js` knows nothing about cats; the `lib/`
+logic knows nothing about React; pages are pure views over `AppState`. `storage.js`
+exposes an async `{ load, save, clear }` interface, so swapping localStorage for a
+backend (fetch, IndexedDB, a sync service) is a one-file change — and the same seam
+is where a Litter-Robot / smart-feeder weight feed would land.
 
 ## Develop
 
@@ -83,15 +121,19 @@ Stack: React 18, Vite, Tailwind CSS, lucide-react, Vitest.
 
 ### Tests
 
-Because `nutrition.js` and `foods.js` are pure, the claims the app makes are pinned
-by assertions rather than re-verified by hand (`src/lib/*.test.js`), including:
+Every `lib/` module is pure, so the claims the app makes are pinned by assertions
+rather than re-verified by hand (`src/lib/*.test.js`, ~50 cases), including:
 
 - maintenance always uses the adult factor, never the kitten growth factor;
 - the growth factor tapers from 2.5 (≤4 mo) to the adult factor (12 mo);
 - BCS ↔ % round-trips for every integer score;
 - `distribute` returns integers that sum exactly to the target;
 - `waterfall` keeps a split at 100% — including dragging the last row;
-- a transition day's kcal column sums to the target at every blend fraction.
+- a transition day's kcal column sums to the target at every blend fraction;
+- `estimateExpenditure` recovers a known maintenance value (loss, gain, and stable
+  cases) and medians away intra-day weigh-in noise;
+- `planWeightLoss` sizes the deficit to the chosen rate, clamps to 0.5–2%/week, holds
+  a nutritional floor, and reports the *actual* rate it delivers when floored.
 
 > The two `npm audit` advisories are in Vite's dev-server dependency (esbuild) and
 > affect only the local dev server, not the production build. Upgrading requires a
