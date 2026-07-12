@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronLeft, Scale, NotebookPen, Info, Target, BarChart3 } from "lucide-react";
+import { ChevronLeft, Scale, NotebookPen, Info, Target, Activity } from "lucide-react";
 import { C, CHART } from "../theme.js";
 import { r0, r1 } from "../lib/util.js";
 import { planWeightChange, autoDirection, DIRECTIONS, RATE } from "../lib/weightPlan.js";
@@ -28,6 +28,7 @@ export default function Expenditure() {
   const changeRate = weeklyRate(plan.resultingWeeklyChangeKg, unit);
   const dirLabel = { lose: "Lose", maintain: "Maintain", gain: "Gain" };
 
+  const [showAlgo, setShowAlgo] = useState(false);
   const [range, setRange] = useState("3m");
   const [analysis, setAnalysis] = useState("none"); // 'none' | 'rate' | 'kcal'
   const rangeDays = RANGES.find((r) => r.key === range)?.days;
@@ -50,7 +51,7 @@ export default function Expenditure() {
         </nav>
 
         <div className="mb-6">
-          <div style={{ color: C.spruce }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><BarChart3 size={13} /> energy expenditure</div>
+          <div style={{ color: C.spruce }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><Activity size={13} /> energy expenditure</div>
           <h1 className="text-2xl font-semibold leading-tight" style={{ letterSpacing: "-0.01em" }}>What {p.name} actually burns</h1>
           <p style={{ color: C.sub }} className="text-sm mt-1">Back-calculated from her weight trend and what you fed. <a href="#/log" style={{ color: C.spruce }} className="underline">Log weigh-ins and food →</a></p>
         </div>
@@ -63,12 +64,18 @@ export default function Expenditure() {
         <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-5 mb-4">
           <div className="flex items-center justify-between">
             <div style={{ color: C.sub }} className="text-xs uppercase tracking-widest font-mono">Measured maintenance</div>
-            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }} title="v3 = unobserved-components (separates gut-fill transients). v2 = Kalman. v1 = EWMA + regression.">
-              {[["v3", "v3"], ["v2", "v2"], ["v1", "v1"]].map(([a, lbl]) => (
-                <button key={a} onClick={() => setExpSettings({ algo: a })} aria-pressed={expSettings.algo === a} style={{ background: expSettings.algo === a ? C.spruce : "transparent", color: expSettings.algo === a ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
-              ))}
-            </div>
+            <button onClick={() => setShowAlgo((s) => !s)} aria-expanded={showAlgo} style={{ color: C.faint }} className="text-xs font-mono">estimator {expSettings.algo} {showAlgo ? "▾" : "▸"}</button>
           </div>
+          {showAlgo && (
+            <div className="flex items-center justify-between mt-2 mb-1">
+              <span style={{ color: C.faint }} className="text-[11px] leading-snug">v3 unobserved-components · v2 Kalman · v1 EWMA. v3 is best for almost everyone.</span>
+              <div className="flex rounded-lg overflow-hidden border shrink-0 ml-2" style={{ borderColor: C.line }}>
+                {[["v3", "v3"], ["v2", "v2"], ["v1", "v1"]].map(([a, lbl]) => (
+                  <button key={a} onClick={() => setExpSettings({ algo: a })} aria-pressed={expSettings.algo === a} style={{ background: expSettings.algo === a ? C.spruce : "transparent", color: expSettings.algo === a ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
+                ))}
+              </div>
+            </div>
+          )}
           {e.enoughData ? (
             <>
               <div className="flex items-baseline gap-2 mt-1">
@@ -148,6 +155,7 @@ export default function Expenditure() {
                 </div>
                 <input type="range" min={RATE.min} max={RATE.max} step="0.05" value={expSettings.pctPerWeek}
                   onChange={(ev) => setExpSettings({ pctPerWeek: Number(ev.target.value) })}
+                  aria-label={`Target ${dir === "gain" ? "gain" : "loss"} rate, percent of body weight per week`} aria-valuetext={`${r1(expSettings.pctPerWeek)} percent per week`}
                   className="w-full block" style={{ accentColor: C.amber }} />
                 <div style={{ color: C.faint }} className="flex justify-between text-xs font-mono mt-0.5"><span>{RATE.min}% gentle</span><span>{RATE.max}% max safe</span></div>
 
@@ -185,7 +193,7 @@ export default function Expenditure() {
 function Stat({ label, value }) {
   return (
     <div style={{ background: C.spruceSoft }} className="rounded-lg px-2.5 py-2">
-      <div style={{ color: C.faint }} className="text-[10px] uppercase tracking-wide">{label}</div>
+      <div style={{ color: C.sub }} className="text-[11px] uppercase tracking-wide">{label}</div>
       <div style={{ color: C.ink }} className="tabular-nums mt-0.5">{value}</div>
     </div>
   );

@@ -3,8 +3,8 @@ import { Plus, Scale, Info, ChevronDown, ChevronRight, ChevronLeft, RotateCcw, A
 import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
 import { transitionAmount, isCompleteFood } from "../lib/foods.js";
-import { planWeightChange, autoDirection } from "../lib/weightPlan.js";
-import { toDisplayWeight, fromDisplayWeight, weightLabel, round5 } from "../lib/units.js";
+import { resolveTarget } from "../lib/targeting.js";
+import { toDisplayWeight, fromDisplayWeight, weightLabel } from "../lib/units.js";
 import { useApp } from "../state/AppState.jsx";
 import RationRow from "../components/RationRow.jsx";
 import SavedFoods from "../components/SavedFoods.jsx";
@@ -28,13 +28,7 @@ export default function RationPlanner() {
   // Energy basis: the vet formula (default) or the measured expenditure. When "measured" is
   // selected and there's enough data, the working target comes from the estimate — and if the
   // cat is overweight, from the safe-deficit plan built on it.
-  const measured = expenditure.enoughData ? expenditure.kcal : null;
-  const useMeasured = expSettings.energyBasis === "measured" && measured != null;
-  const measuredDir = expSettings.direction && expSettings.direction !== "auto" ? expSettings.direction : autoDirection(t.pctOver);
-  const measuredPlan = useMeasured
-    ? planWeightChange({ direction: measuredDir, maintenanceKcal: measured, currentKg: t.w, idealKg: t.idealWeight, pctPerWeek: expSettings.pctPerWeek })
-    : null;
-  const target = useMeasured ? round5(measuredPlan.targetKcal) : t.target;
+  const { target, measured: useMeasured, dir: measuredDir, plan: measuredPlan, maintenance: measured } = resolveTarget({ t, expenditure, expSettings });
   const measuredWord = measuredDir === "gain" ? "surplus over" : measuredDir === "lose" ? "deficit off" : "at";
 
   const goalText = {
@@ -125,7 +119,7 @@ export default function RationPlanner() {
               <Field label="Weight vs ideal" suffix="% (+over / −under)"><NumInput value={p.pctOver} onChange={setPct} step="1" /></Field>
             ) : (
               <div>
-                <input type="range" min="1" max="9" step="1" value={p.bcs} onChange={(e) => setBcs(Number(e.target.value))} className="w-full" style={{ accentColor: C.spruce }} />
+                <input type="range" min="1" max="9" step="1" value={p.bcs} onChange={(e) => setBcs(Number(e.target.value))} aria-label="Body condition score, 1 to 9" aria-valuetext={`${p.bcs}${p.bcs === 5 ? ", ideal" : ""}`} className="w-full" style={{ accentColor: C.spruce }} />
                 <div style={{ color: C.faint }} className="flex justify-between text-xs font-mono mt-0.5"><span>1 emaciated</span><span style={{ color: C.spruce }}>{p.bcs} · {(p.bcs - 5) * 10 > 0 ? "+" : ""}{(p.bcs - 5) * 10}% {p.bcs === 5 ? "(ideal)" : ""}</span><span>9 obese</span></div>
               </div>
             )}
@@ -186,7 +180,7 @@ export default function RationPlanner() {
                     <span style={{ color: C.faint }} className="text-xs font-mono ml-1">kcal</span>
                   </div>
                 </div>
-                <input type="range" min={lo} max={hi} step="5" value={val} onChange={(e) => set("customTarget", Number(e.target.value))} className="w-full block" style={{ accentColor: C.amber }} />
+                <input type="range" min={lo} max={hi} step="5" value={val} onChange={(e) => set("customTarget", Number(e.target.value))} aria-label="Custom daily energy target, kcal" aria-valuetext={`${val} kcal`} className="w-full block" style={{ accentColor: C.amber }} />
                 <div className="relative h-6 mt-1">
                   {ticks.map((gg) => (
                     <div key={gg.id} className="absolute top-0 flex flex-col items-center" style={{ left: `${posOf(t.refs[gg.id])}%`, transform: "translateX(-50%)" }}>
@@ -229,7 +223,7 @@ export default function RationPlanner() {
           <button onClick={() => setShowAdvanced((s) => !s)} style={{ color: C.faint }} className="mt-3 inline-flex items-center gap-1 text-xs font-mono">{showAdvanced ? <ChevronDown size={13} /> : <ChevronRight size={13} />} energy factors</button>
           {showAdvanced && (
             <div className="mt-2">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[["neutered", "Neutered", "× RER"], ["intact", "Intact", "× RER"], ["kittenPeak", "Kitten peak", "× RER"], ["moderation", "Gentle", "× cur"], ["loss", "Loss", "× ideal"], ["gain", "Gain", "× ideal"]].map(([k, lbl, suf]) => (
                   <Field key={k} label={lbl} suffix={suf}><NumInput value={p.factors[k]} onChange={(v) => setFactor(k, v)} step="0.05" /></Field>
                 ))}
@@ -247,6 +241,9 @@ export default function RationPlanner() {
           </div>
           <p style={{ color: C.faint }} className="text-xs mb-3">The target end-state. Set what share of the daily calories each food covers.</p>
           {foodList(ration)}
+          {Math.abs(ration.sum - 100) >= 0.5 && (
+            <p style={{ color: C.warn }} className="text-xs mt-2">This split adds up to {r1(ration.sum)}%, so it delivers ~{r0(target * ration.sum / 100)} of {r0(target)} kcal/day. Use → 100% to fill the target.</p>
+          )}
           <div className="mt-3 flex items-center gap-2 text-xs" style={{ color: C.sub }}>
             <span>Opened wet cans keep</span>
             <div style={{ borderColor: C.line }} className="inline-flex items-baseline border rounded-lg px-2 py-1 bg-white">

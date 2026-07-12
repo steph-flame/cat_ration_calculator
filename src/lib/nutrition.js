@@ -15,7 +15,7 @@ export const RER = (kg) => 70 * Math.pow(kg, 0.75);
 // Body condition: a 1-9 BCS maps to % over/under ideal at 10 points per score, with
 // 5 = ideal. Inverse clamps back into the 1-9 range. Round-trips exactly for scores
 // that land on a 10% step (i.e. every integer BCS).
-export const bcsToPct = (bcs) => (bcs - 5) * 10;
+export const bcsToPct = (bcs) => ((Number.isFinite(bcs) ? bcs : 5) - 5) * 10; // default to 5 (ideal) if unset
 export const pctToBcs = (pct) => Math.max(1, Math.min(9, Math.round(5 + num(pct) / 10)));
 
 // The goal options offered depend on life stage: kittens can't "maintain", etc.

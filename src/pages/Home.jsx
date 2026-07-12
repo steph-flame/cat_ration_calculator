@@ -3,6 +3,7 @@ import { C } from "../theme.js";
 import { useApp } from "../state/AppState.jsx";
 import { r0, r1 } from "../lib/util.js";
 import { toDisplayWeight, weightLabel } from "../lib/units.js";
+import { resolveTarget } from "../lib/targeting.js";
 
 // Landing page: pick a tool. Shows a one-line status from each so the home screen is useful,
 // not just a menu.
@@ -34,7 +35,7 @@ export default function Home() {
   const tools = [
     { href: "#/ration", icon: Scale, title: "Ration planner",
       desc: "Daily energy target, food split into gram portions, and a food-transition schedule.",
-      status: `${r0(t.target)} kcal/day target` },
+      status: `${r0(resolveTarget({ t, expenditure, expSettings }).target)} kcal/day target` },
     { href: "#/expenditure", icon: Activity, title: "Energy expenditure",
       desc: "Measure the real maintenance requirement from weight trend + intake, and plan a safe deficit.",
       status: expStatus },

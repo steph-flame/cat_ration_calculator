@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { C, CHART } from "../theme.js";
 import { r0, r1 } from "../lib/util.js";
 import { extent, niceTicks, linScale } from "../lib/scale.js";
+import { diffDays } from "../lib/series.js";
 import { weightChangeRate } from "../lib/timeline.js";
 import { RATE } from "../lib/weightPlan.js";
 import { toDisplayWeight, weightLabel, weeklyRate } from "../lib/units.js";
@@ -11,7 +12,7 @@ import { toDisplayWeight, weightLabel, weeklyRate } from "../lib/units.js";
 // dual-axis overlay — each unit gets its own panel.
 
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const fmtDate = (d) => { const t = new Date(`${d}T00:00:00Z`); return `${MON[t.getUTCMonth()]} ${t.getUTCDate()}`; };
+const fmtDate = (d, withYear) => { const t = new Date(`${d}T00:00:00Z`); return `${MON[t.getUTCMonth()]} ${t.getUTCDate()}${withYear ? ` '${d.slice(2, 4)}` : ""}`; };
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const fmtTick = (v) => String(+v.toFixed(3));
 
@@ -100,6 +101,8 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
 
   const nLabels = Math.min(5, n);
   const xLabels = Array.from({ length: nLabels }, (_, k) => Math.round((k / (nLabels - 1)) * (n - 1)));
+  // show the year on long spans / when the window crosses a year boundary
+  const showYear = frame[0].date.slice(0, 4) !== frame[n - 1].date.slice(0, 4) || diffDays(frame[0].date, frame[n - 1].date) > 300;
 
   const onMove = (ev) => {
     const rect = ref.current.getBoundingClientRect();
@@ -183,11 +186,12 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
 
           {/* end-of-line direct labels */}
           <EndDot x={xAt(n - 1)} y={wY(wOf(last))} color={CHART.weight} label={`${r1(wOf(last))} ${weightLabel(unit)}`} fs={fs} />
+          {last.kin != null && <EndDot x={xAt(n - 1)} y={eY(last.kin)} color={CHART.intake} label={`${r0(last.kin)}`} fs={fs} below />}
           {hasExp && last.e != null && <EndDot x={xAt(n - 1)} y={eY(last.e)} color={CHART.expenditure} label={`${r0(last.e)}`} fs={fs} />}
 
           {/* x-axis */}
           {xLabels.map((i) => (
-            <text key={i} x={clamp(xAt(i), px0 + 8, px1 - 8)} y={xAxisY + 14} textAnchor="middle" fontSize={9 * fs} fontFamily="monospace" fill={C.faint}>{fmtDate(frame[i].date)}</text>
+            <text key={i} x={clamp(xAt(i), px0 + 8, px1 - 8)} y={xAxisY + 14} textAnchor="middle" fontSize={9 * fs} fontFamily="monospace" fill={C.faint}>{fmtDate(frame[i].date, showYear)}</text>
           ))}
 
           {/* hover crosshair */}
@@ -206,7 +210,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
           <div style={{ position: "absolute", top: 0, left: `${clamp((hover / (n - 1)) * 100, 0, 100)}%`,
             transform: `translateX(${hover / (n - 1) > 0.6 ? "-105%" : "8px"})`, background: C.card, borderColor: C.line, pointerEvents: "none" }}
             className="border rounded-lg px-2 py-1.5 text-xs shadow-sm font-mono whitespace-nowrap">
-            <div style={{ color: C.sub }} className="mb-0.5">{fmtDate(hp.date)}</div>
+            <div style={{ color: C.sub }} className="mb-0.5">{fmtDate(hp.date, showYear)}</div>
             <TipRow color={CHART.weight} label="weight" value={wOf(hp) != null ? `${r1(wOf(hp))} ${weightLabel(unit)}` : "—"} />
             <TipRow color={CHART.intake} label="in" value={hp.kin != null ? `${r0(hp.kin)} kcal` : "—"} />
             {hasExp && <TipRow color={CHART.expenditure} label="burns" value={hp.e != null ? `${r0(hp.e)} kcal` : "—"} />}
@@ -256,11 +260,11 @@ function RangeRow({ range, onRange, ranges }) {
   );
 }
 
-function EndDot({ x, y, color, label, fs = 1 }) {
+function EndDot({ x, y, color, label, fs = 1, below = false }) {
   return (
     <g>
       <circle cx={x} cy={y} r="3" fill={color} stroke="#fff" strokeWidth="1.5" />
-      <text x={x - 6} y={y - 6} textAnchor="end" fontSize={9 * fs} fontFamily="monospace" fill={color} fontWeight="600">{label}</text>
+      <text x={x - 6} y={y + (below ? 10 * fs : -6)} textAnchor="end" fontSize={9 * fs} fontFamily="monospace" fill={color} fontWeight="600">{label}</text>
     </g>
   );
 }

@@ -21,7 +21,7 @@ export default function RationRow({ f, target, onSet, onSlidePct, onPrefill, onR
     : [["kcalPerUnit", "Energy per can", "kcal", "1"], ["gramsPerUnit", "Grams per can", "g", "1"]];
   return (
     <div style={{ borderColor: C.line }} className="border rounded-xl p-3">
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
         <FoodSearch
           value={f.name}
           search={searchFoods}
@@ -48,9 +48,10 @@ export default function RationRow({ f, target, onSet, onSlidePct, onPrefill, onR
         ))}
       </div>
       <div className="mt-3 flex items-center gap-3">
-        <input type="range" min="0" max="100" step="1" value={num(f.pct)} onChange={(e) => (onSlidePct ? onSlidePct(f.id, Number(e.target.value)) : onSet(f.id, "pct", Number(e.target.value)))} className="flex-1" style={{ accentColor: C.amber }} />
+        <input type="range" min="0" max="100" step="1" value={num(f.pct)} onChange={(e) => (onSlidePct ? onSlidePct(f.id, Number(e.target.value)) : onSet(f.id, "pct", Number(e.target.value)))} className="flex-1" style={{ accentColor: C.amber }}
+          aria-label={`${f.name || "food"} share of the ration`} aria-valuetext={`${num(f.pct)} percent`} />
         <div className="flex items-baseline gap-1">
-          <input type="number" value={num(f.pct)} onChange={(e) => onSet(f.id, "pct", e.target.value === "" ? 0 : Number(e.target.value))} className="w-12 text-right bg-transparent outline-none font-mono text-sm tabular-nums" style={{ color: C.ink }} />
+          <input type="number" value={num(f.pct)} aria-label={`${f.name || "food"} percent`} onChange={(e) => { const v = e.target.value === "" ? 0 : Number(e.target.value); (onSlidePct ? onSlidePct(f.id, v) : onSet(f.id, "pct", v)); }} className="w-12 text-right bg-transparent outline-none font-mono text-sm tabular-nums" style={{ color: C.ink }} />
           <span style={{ color: C.faint }} className="font-mono text-sm">%</span>
         </div>
       </div>

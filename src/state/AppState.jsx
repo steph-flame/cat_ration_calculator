@@ -9,7 +9,7 @@ import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
 import { useLog } from "../hooks/useLog.js";
 
 const defaultTr = () => ({ on: false, days: 7, timelineUnit: "g" });
-const defaultExpSettings = () => ({ pctPerWeek: 1, energyBasis: "formula", algo: "v3", unit: "kg", direction: "auto" });
+const defaultExpSettings = () => ({ pctPerWeek: 1, energyBasis: "formula", algo: "v3", unit: "kg", direction: "auto", lastMethod: "petScale" });
 
 // Clean up legacy food data: strip "(dry)"/"(wet)", snap macro-identical near-dupes to their
 // canonical built-in name, and retire the generic Tiki. Pure — used on load and on import.

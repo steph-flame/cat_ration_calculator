@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronLeft, ChevronDown, ChevronRight, Scale, Activity, NotebookPen, Plus, X } from "lucide-react";
 import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
@@ -42,7 +42,7 @@ export default function Log() {
           </div>
         </div>
 
-        <WeightLog log={weightLog} unit={unit} />
+        <WeightLog log={weightLog} unit={unit} lastMethod={expSettings.lastMethod || DEFAULT_METHOD} onMethod={(m) => setExpSettings({ lastMethod: m })} />
         <IntakeLog log={intakeLog} library={library} />
       </div>
     </div>
@@ -66,10 +66,11 @@ function DayList({ days, renderDay }) {
 }
 
 /* ---------- weight log ---------- */
-function WeightLog({ log, unit }) {
+function WeightLog({ log, unit, lastMethod, onMethod }) {
   const [date, setDate] = useState(today);
   const [val, setVal] = useState("");
-  const [method, setMethod] = useState(DEFAULT_METHOD);
+  const [method, setMethod] = useState(lastMethod || DEFAULT_METHOD);
+  const chooseMethod = (m) => { setMethod(m); onMethod?.(m); }; // remember last-used across sessions
   const [open, setOpen] = useState(() => new Set()); // expanded day → shows individual reads
   const days = groupByDay(log.items);
   const addEntry = () => {
@@ -114,7 +115,7 @@ function WeightLog({ log, unit }) {
         <div style={{ color: C.sub }} className="text-xs mb-1">Measured with</div>
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(WEIGH_METHODS).map(([key, m]) => (
-            <button key={key} onClick={() => setMethod(key)} aria-pressed={method === key}
+            <button key={key} onClick={() => chooseMethod(key)} aria-pressed={method === key}
               style={{ borderColor: method === key ? C.spruce : C.line, background: method === key ? C.spruceSoft : "transparent", color: method === key ? C.spruce : C.sub }}
               className="text-xs border rounded-lg px-2 py-1 font-mono">{m.label}</button>
           ))}
@@ -146,7 +147,10 @@ function IntakeLog({ log, library }) {
   const [kcal, setKcal] = useState("");
   const [open, setOpen] = useState(() => new Set());
   const computed = num(grams) > 0 && kcalG > 0 ? num(grams) * kcalG : null;
-  const effectiveKcal = computed != null ? computed : num(kcal);
+  // Auto-fill kcal from food × grams, but let the user override it afterward (they can edit
+  // the field; it only re-fills when the food or grams change).
+  useEffect(() => { if (computed != null) setKcal(String(r0(computed))); }, [computed]);
+  const effectiveKcal = num(kcal);
   const days = groupByDay(log.items);
   const addEntry = () => {
     if (effectiveKcal > 0) {
@@ -195,8 +199,8 @@ function IntakeLog({ log, library }) {
           <label className="block flex-1"><div style={{ color: C.sub }} className="text-xs mb-1">Date</div>
             <input type="date" value={date} onChange={(ev) => setDate(ev.target.value)} style={{ borderColor: C.line, color: C.ink }} className="w-full border rounded-lg px-2.5 py-1.5 bg-white text-sm font-mono outline-none" /></label>
           <div className="w-20"><Field label="Grams" suffix="g"><NumInput value={grams} onChange={setGrams} step="1" /></Field></div>
-          <div className="w-24"><Field label={computed != null ? "kcal (auto)" : "kcal"} suffix="kcal">
-            <NumInput value={computed != null ? r0(computed) : kcal} onChange={setKcal} step="1" /></Field></div>
+          <div className="w-24"><Field label="kcal" suffix="kcal">
+            <NumInput value={kcal} onChange={setKcal} step="1" /></Field></div>
           <button onClick={addEntry} style={{ background: C.spruce }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
         </div>
         {kcalG > 0 && <p style={{ color: C.faint }} className="text-xs">{name} ≈ {r0(kcalG * 1000)} kcal/kg — grams × that fills kcal automatically.</p>}
