@@ -3,7 +3,7 @@ import { Plus, Scale, Info, ChevronDown, ChevronRight, ChevronLeft, RotateCcw, A
 import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
 import { transitionAmount } from "../lib/foods.js";
-import { planWeightLoss } from "../lib/weightPlan.js";
+import { planWeightChange, autoDirection } from "../lib/weightPlan.js";
 import { toDisplayWeight, fromDisplayWeight, weightLabel, round5 } from "../lib/units.js";
 import { useApp } from "../state/AppState.jsx";
 import RationRow from "../components/RationRow.jsx";
@@ -29,10 +29,12 @@ export default function RationPlanner() {
   // cat is overweight, from the safe-deficit plan built on it.
   const measured = expenditure.enoughData ? expenditure.kcal : null;
   const useMeasured = expSettings.energyBasis === "measured" && measured != null;
-  const deficitPlan = useMeasured && t.pctOver > 0
-    ? planWeightLoss({ maintenanceKcal: measured, currentKg: t.w, idealKg: t.idealWeight, pctPerWeek: expSettings.pctPerWeek })
+  const measuredDir = expSettings.direction && expSettings.direction !== "auto" ? expSettings.direction : autoDirection(t.pctOver);
+  const measuredPlan = useMeasured
+    ? planWeightChange({ direction: measuredDir, maintenanceKcal: measured, currentKg: t.w, idealKg: t.idealWeight, pctPerWeek: expSettings.pctPerWeek })
     : null;
-  const target = useMeasured ? (deficitPlan ? round5(deficitPlan.targetKcal) : measured) : t.target;
+  const target = useMeasured ? round5(measuredPlan.targetKcal) : t.target;
+  const measuredWord = measuredDir === "gain" ? "surplus over" : measuredDir === "lose" ? "deficit off" : "at";
 
   const goalText = {
     grow: `feeding for growth at ${showW(wkg)}`,
@@ -159,13 +161,13 @@ export default function RationPlanner() {
               <div style={{ color: C.sub }} className="text-xs uppercase tracking-widest font-mono">Feed per day</div>
               <div className="flex items-baseline gap-2 mt-1"><span style={{ color: C.amber }} className="text-5xl font-mono font-semibold tabular-nums">{r0(target)}</span><span style={{ color: C.sub }} className="text-lg font-mono">kcal</span></div>
               <div style={{ color: C.faint }} className="text-xs font-mono mt-1">
-                {useMeasured ? (deficitPlan ? `measured − safe deficit (${deficitPlan.rate}%/wk)` : "from measured expenditure") : "from vet formula"}
+                {useMeasured ? (measuredDir === "maintain" ? "measured maintenance" : `measured ${measuredDir === "gain" ? "+ surplus" : "− deficit"} (${r1(measuredPlan.resultingRatePctPerWeek)}%/wk)`) : "from vet formula"}
               </div>
             </div>
             <div style={{ color: C.faint }} className="text-xs text-right font-mono">{t.stage}<br />{showIdeal ? `ideal ${showW(t.idealWeight)}` : `RER ${r0(t.rerCur)}`}</div>
           </div>
-          <p style={{ color: C.sub }} className="text-sm mt-3 leading-snug">{p.name} is <span style={{ color: C.ink }}>{t.pctOver > 0 ? `${r0(t.pctOver)}% over ideal` : t.pctOver < 0 ? `${r0(-t.pctOver)}% under ideal` : "at ideal weight"}</span> — {useMeasured ? (deficitPlan ? `a safe deficit off measured maintenance (${r0(measured)} kcal), losing ~${deficitPlan.rate}%/week` : `measured maintenance of ${r0(measured)} kcal`) : goalText}.</p>
-          {deficitPlan && deficitPlan.warnings.map((wtext, i) => (<Note key={i} tone="warn">{wtext}</Note>))}
+          <p style={{ color: C.sub }} className="text-sm mt-3 leading-snug">{p.name} is <span style={{ color: C.ink }}>{t.pctOver > 0 ? `${r0(t.pctOver)}% over ideal` : t.pctOver < 0 ? `${r0(-t.pctOver)}% under ideal` : "at ideal weight"}</span> — {useMeasured ? (measuredDir === "maintain" ? `measured maintenance of ${r0(measured)} kcal` : `a safe ${measuredWord} measured maintenance (${r0(measured)} kcal), ${measuredDir === "gain" ? "gaining" : "losing"} ~${r1(measuredPlan.resultingRatePctPerWeek)}%/week`) : goalText}.</p>
+          {measuredPlan && measuredPlan.warnings.map((wtext, i) => (<Note key={i} tone="warn">{wtext}</Note>))}
 
           {!useMeasured && goalId === "custom" && (() => {
             const refVals = t.stageGoals.filter((gg) => gg.id !== "custom").map((gg) => t.refs[gg.id]);

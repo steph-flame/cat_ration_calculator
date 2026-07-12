@@ -34,13 +34,17 @@ tools that share one profile, food library, and history.
   (precision-weighted by weigh-in method, with a real confidence band), and **v3**
   (default) an unobserved-components model that separates gut-fill/hydration transients
   from genuine expenditure change — ~2× less day-to-day jitter than v2.
-- **Safe weight-loss plan** — a *calorie* deficit off maintenance, sized to a vet-safe
-  rate (0.5–2%/week, default 1%), with a nutritional floor, an honest projected rate,
+- **Feeding plan** — pick a direction (**lose / maintain / gain**, auto-set from body
+  condition): a *calorie* deficit or surplus off maintenance, sized to a vet-safe rate
+  (0.5–2%/week, default 1%), with a nutritional floor on loss, an honest projected rate,
   and a weeks-to-ideal estimate. Disabled for kittens (growth confounds the balance).
-- **Timeline** — weight and energy (calories in vs. estimated expenditure, with its
-  confidence band) on two x-aligned panels over a selectable range (1W–1Y), with a
-  hover crosshair. The intake-below-expenditure gap visibly drives the weight trend.
-- Intake log **grouped by day** with per-day totals.
+- **Timeline** — weight and energy (calories in vs. estimated expenditure + confidence
+  band) on x-aligned panels over a selectable range (1W–1Y), with a hover crosshair and
+  an optional **analysis panel**: smoothed weight-change **rate** (%/week, with the safe
+  band shaded) or the caloric **balance** (deficit/surplus). The intake-below-expenditure
+  gap visibly drives the weight trend.
+- **kg / lb** toggle throughout; a separate **Log** page (weigh-ins grouped by day with a
+  daily average and expandable detail; food grouped by day).
 
 - Everything **saves automatically** on your device (localStorage).
 

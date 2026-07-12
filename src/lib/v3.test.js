@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ucEstimateExpenditure, kalmanEstimateExpenditure } from "./expenditure.js";
+import { ucEstimateExpenditure, kalmanEstimateExpenditure, KCAL_PER_KG } from "./expenditure.js";
 import { addDays } from "./series.js";
 
 // Seeded RNG so the "with noise" tests are deterministic (mirrors research/v3_expenditure.py).
@@ -14,7 +14,7 @@ function mulberry32(seed) {
 const gauss = (r) => Math.sqrt(-2 * Math.log(Math.max(1e-9, r()))) * Math.cos(2 * Math.PI * r());
 
 // Synthetic history: true slow weight (energy balance) + AR(1) gut-fill transient + sensor noise.
-function synth(seed, { days = 70, intake = 210, E = 260, rho = 8000, w0 = 6.0, readsPerDay = 3,
+function synth(seed, { days = 70, intake = 210, E = 260, rho = KCAL_PER_KG, w0 = 6.0, readsPerDay = 3,
   phiT = 0.5, sigmaT = 0.05, sigmaSensor = 0.02, method = "litterRobot" } = {}) {
   const r = mulberry32(seed);
   const eAt = typeof E === "function" ? E : () => E;

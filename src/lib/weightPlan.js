@@ -1,55 +1,60 @@
-// Safe weight-loss prescription. Turns a maintenance-energy number (from EITHER the vet
-// formula or the measured expenditure estimate) into a daily Calorie target that loses fat
-// at a vet-safe rate.
+// Energy-target prescription for a chosen direction — lose, maintain, or gain. Turns a
+// maintenance number (measured or formula-derived) into a daily Calorie target.
 //
-// Safety (AAHA / APOP): cats should lose ~0.5–2% of body weight per week — the conservative
-// end for cats, which are prone to hepatic lipidosis if slimmed too fast. Starting target is
-// ~0.8 × RER at ideal weight; below that needs veterinary supervision. Sources in README.
+// Safety (AAHA / APOP): cats change weight slowly — the conservative end for cats, which
+// are prone to hepatic lipidosis if slimmed too fast. Loss/gain rate ~0.5–2% of body
+// weight/week; loss target floors at ~0.8 × RER at ideal weight. Sources in README.
 
 import { RER } from "./nutrition.js";
 import { KCAL_PER_KG } from "./expenditure.js";
 
-export const RATE = { min: 0.5, max: 2, default: 1 }; // % body weight lost per week
+export const RATE = { min: 0.5, max: 2, default: 1 }; // % body weight change per week
+export const DIRECTIONS = ["lose", "maintain", "gain"];
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
-// maintenanceKcal: intake that holds current weight (measured or formula-derived).
-// currentKg / idealKg: from the profile. pctPerWeek: desired loss rate (% of body wt / week).
-export function planWeightLoss({ maintenanceKcal, currentKg, idealKg, pctPerWeek = RATE.default, rho = KCAL_PER_KG }) {
-  const overweight = currentKg > idealKg + 0.01;
+// Default direction from body condition when the user hasn't picked one.
+export const autoDirection = (pctOver) => (pctOver > 2 ? "lose" : pctOver < -2 ? "gain" : "maintain");
+
+// direction: "lose" | "maintain" | "gain". currentKg/idealKg from the profile.
+export function planWeightChange({ direction, maintenanceKcal, currentKg, idealKg, pctPerWeek = RATE.default, rho = KCAL_PER_KG }) {
   const requested = pctPerWeek;
+
+  if (direction === "maintain") {
+    return { direction, applicable: true, rate: 0, requested, weeklyChangeKg: 0, dailyDelta: 0,
+      targetKcal: maintenanceKcal, floorKcal: null, belowFloor: false, weeksToIdeal: null,
+      resultingRatePctPerWeek: 0, resultingWeeklyChangeKg: 0, warnings: [] };
+  }
+
+  const gain = direction === "gain";
+  const sign = gain ? 1 : -1;
   const rate = clamp(pctPerWeek, RATE.min, RATE.max);
+  const dailyDelta = sign * ((rho * (currentKg * rate)) / 100) / 7; // + surplus / − deficit
+  const floorKcal = 0.8 * RER(idealKg);
+  const rawTarget = maintenanceKcal + dailyDelta;
+  const belowFloor = !gain && rawTarget < floorKcal; // nutritional floor applies to loss only
+  const targetKcal = belowFloor ? floorKcal : rawTarget;
 
-  const weeklyLossKg = (currentKg * rate) / 100;
-  const dailyDeficit = (rho * weeklyLossKg) / 7;
-  const floorKcal = 0.8 * RER(idealKg);          // supervised lower bound
-  const rawTarget = maintenanceKcal - dailyDeficit;
-  const belowFloor = rawTarget < floorKcal;
-  const targetKcal = Math.max(rawTarget, floorKcal);
+  // The rate the FINAL target actually delivers (slower than requested if the floor bound).
+  const resultingWeeklyChangeKg = ((targetKcal - maintenanceKcal) * 7) / rho; // signed
+  const resultingRatePctPerWeek = currentKg > 0 ? (Math.abs(resultingWeeklyChangeKg) / currentKg) * 100 : 0;
 
-  // The rate the *final* target actually delivers. If the floor bound, this is slower than
-  // requested — surface it so the UI never implies a rate it isn't feeding for.
-  const resultingRatePctPerWeek = rateForTarget({ maintenanceKcal, targetKcal, currentKg, rho });
-  const resultingWeeklyLossKg = (currentKg * resultingRatePctPerWeek) / 100;
-  const excessKg = Math.max(0, currentKg - idealKg);
-  const weeksToIdeal = resultingWeeklyLossKg > 0 ? excessKg / resultingWeeklyLossKg : null;
+  const gap = idealKg - currentKg; // gain wants +, lose wants −
+  const towardIdeal = Math.sign(gap) === sign;
+  const weeksToIdeal = towardIdeal && Math.abs(resultingWeeklyChangeKg) > 1e-9 ? Math.abs(gap) / Math.abs(resultingWeeklyChangeKg) : null;
+  const applicable = gain ? currentKg < idealKg - 0.01 : currentKg > idealKg + 0.01;
 
   const warnings = [];
-  if (!overweight) warnings.push("At or below ideal weight — no deficit needed. This plan applies to overweight cats.");
-  if (requested > RATE.max) warnings.push(`${requested}%/week is faster than the safe ceiling — capped at ${RATE.max}%. Faster loss risks hepatic lipidosis.`);
+  if (!applicable) warnings.push(gain
+    ? "At or above ideal weight — no surplus needed. This plan applies to underweight cats."
+    : "At or below ideal weight — no deficit needed. This plan applies to overweight cats.");
+  if (requested > RATE.max) warnings.push(gain
+    ? `${requested}%/week is faster than the safe ceiling — capped at ${RATE.max}%. Rapid gain lays down fat, not condition.`
+    : `${requested}%/week is faster than the safe ceiling — capped at ${RATE.max}%. Faster loss risks hepatic lipidosis.`);
   if (requested < RATE.min && requested > 0) warnings.push(`${requested}%/week is very slow — floored at ${RATE.min}%.`);
   if (belowFloor) warnings.push(`That maintenance estimate would push the target below ~0.8 × RER at ideal weight (${Math.round(floorKcal)} kcal). Held at the floor; go lower only under veterinary supervision.`);
 
-  return {
-    overweight, rate, requested, weeklyLossKg, dailyDeficit,
-    targetKcal, floorKcal, belowFloor, weeksToIdeal, warnings,
-    resultingRatePctPerWeek, resultingWeeklyLossKg,
-  };
-}
-
-// Inverse: the loss rate (%/week) a given daily deficit produces — for showing the effect of
-// a manually chosen target.
-export function rateForTarget({ maintenanceKcal, targetKcal, currentKg, rho = KCAL_PER_KG }) {
-  const dailyDeficit = maintenanceKcal - targetKcal;
-  const weeklyLossKg = (dailyDeficit * 7) / rho;
-  return currentKg > 0 ? (weeklyLossKg / currentKg) * 100 : 0;
+  return { direction, applicable, rate, requested,
+    weeklyChangeKg: sign * (currentKg * rate) / 100, dailyDelta,
+    targetKcal, floorKcal, belowFloor, weeksToIdeal,
+    resultingRatePctPerWeek, resultingWeeklyChangeKg, warnings };
 }

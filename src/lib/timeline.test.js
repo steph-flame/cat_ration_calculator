@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { extent, niceTicks, linScale } from "./scale.js";
-import { buildDailyFrame, historySpanDays } from "./timeline.js";
+import { buildDailyFrame, historySpanDays, weightChangeRate } from "./timeline.js";
 import { groupByDay } from "./series.js";
 
 describe("scale", () => {
@@ -63,5 +63,17 @@ describe("buildDailyFrame", () => {
   it("historySpanDays counts inclusive days", () => {
     expect(historySpanDays(trend)).toBe(3);
     expect(historySpanDays([])).toBe(0);
+  });
+});
+
+describe("weightChangeRate", () => {
+  it("recovers a steady loss rate and signs it negative", () => {
+    // 10 g/day loss on a 5 kg cat → −70 g/week ≈ −1.4%/week
+    const frame = Array.from({ length: 20 }, (_, i) => ({ w: 5.0 - 0.01 * i }));
+    const rate = weightChangeRate(frame, 1); // alpha 1 = no extra smoothing, exact diff
+    const last = rate[rate.length - 1];
+    expect(last.kgPerWeek).toBeCloseTo(-0.07, 6);
+    expect(last.pctPerWeek).toBeLessThan(0);
+    expect(rate[0]).toEqual({ kgPerWeek: null, pctPerWeek: null }); // first point has no prior
   });
 });

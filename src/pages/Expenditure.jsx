@@ -1,8 +1,8 @@
 import { useState, useMemo } from "react";
-import { ChevronLeft, Scale, NotebookPen, Info, TrendingDown, BarChart3 } from "lucide-react";
+import { ChevronLeft, Scale, NotebookPen, Info, Target, BarChart3 } from "lucide-react";
 import { C, CHART } from "../theme.js";
 import { r0, r1 } from "../lib/util.js";
-import { planWeightLoss, RATE } from "../lib/weightPlan.js";
+import { planWeightChange, autoDirection, DIRECTIONS, RATE } from "../lib/weightPlan.js";
 import { buildDailyFrame, RANGES } from "../lib/timeline.js";
 import { toDisplayWeight, weightLabel, weeklyRate, round5 } from "../lib/units.js";
 import { useApp } from "../state/AppState.jsx";
@@ -21,12 +21,15 @@ export default function Expenditure() {
   const showW = (kg, d = 1) => `${(d === 1 ? r1 : r0)(toDisplayWeight(kg, unit))} ${wLbl}`;
 
   const maintenance = e.enoughData ? e.kcal : t.refs.maintain;
-  const plan = planWeightLoss({ maintenanceKcal: maintenance, currentKg: t.w, idealKg: t.idealWeight, pctPerWeek: expSettings.pctPerWeek });
+  const dir = expSettings.direction && expSettings.direction !== "auto" ? expSettings.direction : autoDirection(t.pctOver);
+  const plan = planWeightChange({ direction: dir, maintenanceKcal: maintenance, currentKg: t.w, idealKg: t.idealWeight, pctPerWeek: expSettings.pctPerWeek });
   const planTarget = round5(plan.targetKcal); // snap to a round number
-  const lossRate = weeklyRate(plan.resultingWeeklyLossKg, unit);
+  const delta = planTarget - maintenance; // signed: − deficit, + surplus
+  const changeRate = weeklyRate(plan.resultingWeeklyChangeKg, unit);
+  const dirLabel = { lose: "Lose", maintain: "Maintain", gain: "Gain" };
 
   const [range, setRange] = useState("3m");
-  const [showBalance, setShowBalance] = useState(false);
+  const [analysis, setAnalysis] = useState("none"); // 'none' | 'rate' | 'kcal'
   const rangeDays = RANGES.find((r) => r.key === range)?.days;
   const frame = useMemo(
     () => buildDailyFrame(e.trend, intakeLog.items.map((x) => ({ date: x.date, value: x.kcal })), rangeDays),
@@ -98,39 +101,68 @@ export default function Expenditure() {
         {/* timeline */}
         {e.trend.length >= 2 && (
           <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
-            <TimelineChart frame={frame} range={range} onRange={setRange} ranges={RANGES} unit={unit} showBalance={showBalance} />
+            <TimelineChart frame={frame} range={range} onRange={setRange} ranges={RANGES} unit={unit} analysisMode={analysis === "none" ? null : analysis} />
             <div className="flex items-center justify-between mt-2 gap-3">
               <p style={{ color: C.faint }} className="text-xs leading-snug flex-1">Where <span style={{ color: CHART.intake }}>calories in</span> sits below <span style={{ color: CHART.expenditure }}>expenditure</span>, she's in a deficit and the weight above trends down. Shaded = 95% confidence.</p>
-              <button onClick={() => setShowBalance((s) => !s)} style={{ borderColor: C.line, color: showBalance ? C.spruce : C.sub, background: showBalance ? C.spruceSoft : "transparent" }} className="text-xs font-mono border rounded-lg px-2 py-1 shrink-0">± balance</button>
+              <div className="flex items-center gap-1 shrink-0">
+                {analysis !== "none" && (
+                  <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+                    {[["rate", "%/wk"], ["kcal", "± kcal"]].map(([m, l]) => (
+                      <button key={m} onClick={() => setAnalysis(m)} style={{ background: analysis === m ? C.spruce : "transparent", color: analysis === m ? "#fff" : C.sub }} className="text-xs px-1.5 py-1 font-mono">{l}</button>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => setAnalysis((a) => (a === "none" ? "rate" : "none"))} style={{ borderColor: C.line, color: analysis !== "none" ? C.spruce : C.sub, background: analysis !== "none" ? C.spruceSoft : "transparent" }} className="text-xs font-mono border rounded-lg px-2 py-1">analysis</button>
+              </div>
             </div>
           </section>
         )}
 
-        {/* safe deficit planner — adults only; kittens grow into their frame instead */}
-        {t.pctOver > 0 && !kitten && (
+        {/* feeding plan — adults only; kittens grow into their frame instead */}
+        {!kitten && (
           <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-5 mb-4">
-            <div className="flex items-center gap-2 mb-1"><TrendingDown size={16} style={{ color: C.amber }} /><h2 className="font-medium">Safe weight-loss plan</h2></div>
-            <p style={{ color: C.faint }} className="text-xs mb-3">A calorie deficit off {e.enoughData ? "measured" : "formula"} maintenance ({r0(maintenance)} kcal), sized to a vet-safe rate. Cats slim slowly — too fast risks hepatic lipidosis.</p>
-
-            <div className="flex items-center justify-between mb-1">
-              <span style={{ color: C.sub }} className="text-xs">Target loss rate</span>
-              <span style={{ color: C.amber }} className="text-sm font-mono tabular-nums">{r1(expSettings.pctPerWeek)} %/week</span>
-            </div>
-            <input type="range" min={RATE.min} max={RATE.max} step="0.05" value={expSettings.pctPerWeek}
-              onChange={(ev) => setExpSettings({ pctPerWeek: Number(ev.target.value) })}
-              className="w-full block" style={{ accentColor: C.amber }} />
-            <div style={{ color: C.faint }} className="flex justify-between text-xs font-mono mt-0.5"><span>{RATE.min}% gentle</span><span>{RATE.max}% max safe</span></div>
-
-            <div style={{ background: C.spruceSoft }} className="mt-4 rounded-xl p-3">
-              <div className="flex items-baseline justify-between">
-                <span style={{ color: C.spruce }} className="text-3xl font-mono font-semibold tabular-nums">{planTarget}<span className="text-sm font-normal"> kcal/day</span></span>
-                <span style={{ color: C.sub }} className="text-xs font-mono text-right">−{r0(maintenance - planTarget)} kcal deficit<br />loses ~{r0(lossRate.value)} {lossRate.unit} ({r1(plan.resultingRatePctPerWeek)}%)</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2"><Target size={16} style={{ color: C.amber }} /><h2 className="font-medium">Feeding plan</h2></div>
+              <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+                {DIRECTIONS.map((d) => (
+                  <button key={d} onClick={() => setExpSettings({ direction: d })} style={{ background: dir === d ? C.spruce : "transparent", color: dir === d ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{dirLabel[d]}</button>
+                ))}
               </div>
-              {plan.weeksToIdeal != null && (
-                <div style={{ color: C.faint }} className="text-xs font-mono mt-2">~{Math.ceil(plan.weeksToIdeal)} weeks to reach ideal ({showW(t.idealWeight)}), re-measuring as you go</div>
-              )}
             </div>
-            {plan.warnings.map((w, i) => (<Note key={i} tone="warn">{w}</Note>))}
+            <p style={{ color: C.faint }} className="text-xs mb-3">
+              {dir === "maintain"
+                ? `Feed to hold ${p.name} at ${showW(t.w)}, off ${e.enoughData ? "measured" : "formula"} maintenance.`
+                : `A calorie ${dir === "gain" ? "surplus over" : "deficit off"} ${e.enoughData ? "measured" : "formula"} maintenance (${r0(maintenance)} kcal), sized to a vet-safe rate. ${dir === "gain" ? "Underweight cats should fill out gradually." : "Cats slim slowly — too fast risks hepatic lipidosis."}`}
+            </p>
+
+            {dir === "maintain" ? (
+              <div style={{ background: C.spruceSoft }} className="rounded-xl p-3">
+                <span style={{ color: C.spruce }} className="text-3xl font-mono font-semibold tabular-nums">{round5(maintenance)}<span className="text-sm font-normal"> kcal/day</span></span>
+                <span style={{ color: C.faint }} className="text-xs font-mono ml-2">holds current weight</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <span style={{ color: C.sub }} className="text-xs">Target {dir === "gain" ? "gain" : "loss"} rate</span>
+                  <span style={{ color: C.amber }} className="text-sm font-mono tabular-nums">{r1(expSettings.pctPerWeek)} %/week</span>
+                </div>
+                <input type="range" min={RATE.min} max={RATE.max} step="0.05" value={expSettings.pctPerWeek}
+                  onChange={(ev) => setExpSettings({ pctPerWeek: Number(ev.target.value) })}
+                  className="w-full block" style={{ accentColor: C.amber }} />
+                <div style={{ color: C.faint }} className="flex justify-between text-xs font-mono mt-0.5"><span>{RATE.min}% gentle</span><span>{RATE.max}% max safe</span></div>
+
+                <div style={{ background: C.spruceSoft }} className="mt-4 rounded-xl p-3">
+                  <div className="flex items-baseline justify-between">
+                    <span style={{ color: C.spruce }} className="text-3xl font-mono font-semibold tabular-nums">{planTarget}<span className="text-sm font-normal"> kcal/day</span></span>
+                    <span style={{ color: C.sub }} className="text-xs font-mono text-right">{delta >= 0 ? "+" : "−"}{r0(Math.abs(delta))} kcal {delta >= 0 ? "surplus" : "deficit"}<br />{dir === "gain" ? "gains" : "loses"} ~{r0(changeRate.value)} {changeRate.unit} ({r1(plan.resultingRatePctPerWeek)}%)</span>
+                  </div>
+                  {plan.weeksToIdeal != null && (
+                    <div style={{ color: C.faint }} className="text-xs font-mono mt-2">~{Math.ceil(plan.weeksToIdeal)} weeks to reach ideal ({showW(t.idealWeight)}), re-measuring as you go</div>
+                  )}
+                </div>
+                {plan.warnings.map((w, i) => (<Note key={i} tone="warn">{w}</Note>))}
+              </>
+            )}
 
             <a href="#/ration" onClick={() => setExpSettings({ energyBasis: "measured" })}
               style={{ borderColor: C.line, color: C.spruce }}
@@ -143,7 +175,7 @@ export default function Expenditure() {
 
         <div style={{ color: C.faint }} className="text-xs leading-relaxed space-y-2 px-1 pb-4">
           <p className="flex gap-1.5"><Info size={13} className="shrink-0 mt-0.5" /><span>Log the grams you <em>dispense</em> — a steady grazing-leftover habit cancels out, since the estimate calibrates dispensed calories against her weight response.</span></p>
-          <p>Method: expenditure ≈ mean intake − ρ × weight-change rate (ρ ≈ 8000 kcal/kg for a cat losing fat), over a trailing window. Safe loss rate 0.5–2%/week (AAHA / APOP); floor ~0.8 × RER at ideal weight. Not veterinary advice.</p>
+          <p>Method: expenditure ≈ mean intake − ρ × weight-change rate (ρ ≈ 7800 kcal/kg, inferred from feline body-composition studies — see README), over a trailing window. Safe change rate 0.5–2%/week (AAHA / APOP); loss floor ~0.8 × RER at ideal weight. Not veterinary advice.</p>
         </div>
       </div>
     </div>

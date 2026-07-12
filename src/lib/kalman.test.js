@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { kalmanEstimateExpenditure, dailyWeightWithVariance } from "./expenditure.js";
+import { kalmanEstimateExpenditure, dailyWeightWithVariance, KCAL_PER_KG } from "./expenditure.js";
 import { addDays } from "./series.js";
 
 // Generate weights that are exactly consistent with a known expenditure schedule and
 // constant intake (via the same energy balance the filter assumes). Clean data → the
 // filter must recover the true E. `E` may be a constant or a function of the day index.
-function synth({ days = 45, intake = 200, E = 250, rho = 8000, w0 = 5.0, start = "2026-01-01", method = "petScale" }) {
+function synth({ days = 45, intake = 200, E = 250, rho = KCAL_PER_KG, w0 = 5.0, start = "2026-01-01", method = "petScale" }) {
   const eAt = typeof E === "function" ? E : () => E;
   const weightEntries = [], intakeEntries = [];
   let w = w0;

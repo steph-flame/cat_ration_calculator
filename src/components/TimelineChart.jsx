@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { C, CHART } from "../theme.js";
 import { r0, r1 } from "../lib/util.js";
 import { extent, niceTicks, linScale } from "../lib/scale.js";
+import { weightChangeRate } from "../lib/timeline.js";
+import { RATE } from "../lib/weightPlan.js";
 import { toDisplayWeight, weightLabel, weeklyRate } from "../lib/units.js";
 
 // x-aligned panels sharing one time axis: weight on top, energy (calories in vs. estimated
@@ -16,7 +18,7 @@ const fmtTick = (v) => String(+v.toFixed(3));
 function linePath(frame, accessor, xAt, yScale) {
   let d = "", pen = false;
   frame.forEach((p, i) => {
-    const v = accessor(p);
+    const v = accessor(p, i);
     if (v == null) { pen = false; return; }
     d += `${pen ? "L" : "M"}${xAt(i).toFixed(1)} ${yScale(v).toFixed(1)}`;
     pen = true;
@@ -26,30 +28,35 @@ function linePath(frame, accessor, xAt, yScale) {
 
 // A confidence band polygon (top edge L→R, bottom edge R→L) over points with a center + sd.
 function bandPolygon(frame, center, xAt, yScale, k = 1.96) {
-  const pts = frame.map((p, i) => ({ i, p })).filter(({ p }) => center(p) != null && p.sd != null);
+  const pts = frame.map((p, i) => ({ i, p })).filter(({ p, i }) => center(p, i) != null && p.sd != null);
   if (pts.length < 2) return "";
-  const top = pts.map(({ i, p }) => `${i === pts[0].i ? "M" : "L"}${xAt(i).toFixed(1)} ${yScale(center(p) + k * p.sd).toFixed(1)}`).join("");
-  const bot = pts.slice().reverse().map(({ i, p }) => `L${xAt(i).toFixed(1)} ${yScale(center(p) - k * p.sd).toFixed(1)}`).join("");
+  const top = pts.map(({ i, p }) => `${i === pts[0].i ? "M" : "L"}${xAt(i).toFixed(1)} ${yScale(center(p, i) + k * p.sd).toFixed(1)}`).join("");
+  const bot = pts.slice().reverse().map(({ i, p }) => `L${xAt(i).toFixed(1)} ${yScale(center(p, i) - k * p.sd).toFixed(1)}`).join("");
   return `${top}${bot}Z`;
 }
 
-export default function TimelineChart({ frame, range, onRange, ranges, unit = "kg", showBalance = false, rho = 8000 }) {
+export default function TimelineChart({ frame, range, onRange, ranges, unit = "kg", analysisMode = null, rho = 7800 }) {
   const ref = useRef(null);
   const [hover, setHover] = useState(null);
   const n = frame.length;
+  const showAnalysis = analysisMode != null;
+  const isRate = analysisMode === "rate";
 
   const W = 640, padL = 46, padR = 14;
   const px0 = padL, px1 = W - padR;
   const wTop = 12, wH = 74;
   const eTop = wTop + wH + 30, eH = 96;
   const bTop = eTop + eH + 30, bH = 74;
-  const xAxisY = showBalance ? bTop + bH : eTop + eH;
+  const xAxisY = showAnalysis ? bTop + bH : eTop + eH;
   const H = xAxisY + 22;
 
   const hasExp = frame.some((p) => p.e != null);
   const xAt = (i) => (n <= 1 ? (px0 + px1) / 2 : px0 + (i / (n - 1)) * (px1 - px0));
   const wOf = (p) => (p.w == null ? null : toDisplayWeight(p.w, unit));
   const defOf = (p) => (p.kin != null && p.e != null ? p.kin - p.e : null);
+  // analysis series: weight-change rate (%/week, smoothed) or caloric balance (kcal).
+  const rateSeries = n >= 2 ? weightChangeRate(frame) : [];
+  const aOf = (p, i) => (isRate ? (rateSeries[i] ? rateSeries[i].pctPerWeek : null) : defOf(p));
 
   if (n < 2) {
     return (
@@ -73,9 +80,11 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
   const eTicks = niceTicks(eLo, eHi, 4);
   const eY = linScale([eTicks[0], eTicks[eTicks.length - 1]], [eTop + eH, eTop]);
 
-  // balance scale (includes 0 so the reference line is on-chart)
-  const bVals = frame.map(defOf).concat([0]);
-  const [bLo, bHi] = extent(bVals);
+  // analysis scale (includes 0 so the reference line is on-chart; in rate mode also the
+  // safe-band extremes so the shaded 0.5–2%/week zone is always visible)
+  const aVals = frame.map((p, i) => aOf(p, i)).concat([0]);
+  if (isRate) aVals.push(RATE.max, -RATE.max);
+  const [bLo, bHi] = extent(aVals);
   const bTicks = niceTicks(bLo, bHi, 4);
   const bY = linScale([bTicks[0], bTicks[bTicks.length - 1]], [bTop + bH, bTop]);
 
@@ -92,6 +101,8 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
   const last = frame[n - 1];
   const hDef = hp ? defOf(hp) : null;
   const hRate = hDef != null ? weeklyRate((hDef / rho) * 7, unit) : null;
+  const hA = hp ? aOf(hp, hover) : null;
+  const hRateW = hp && rateSeries[hover] ? weeklyRate(rateSeries[hover].kgPerWeek, unit) : null;
 
   const gridAxis = (ticks, yScale, unitLbl, panelTop) => (
     <g>
@@ -131,14 +142,20 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
             {hasExp && <path d={linePath(frame, (p) => p.e, xAt, eY)} fill="none" stroke={CHART.expenditure} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
           </g>
 
-          {/* balance panel (optional) */}
-          {showBalance && (
+          {/* analysis panel (optional): weight-change rate or caloric balance */}
+          {showAnalysis && (
             <>
-              <text x={px0} y={bTop - 8} fontSize="9" fontFamily="monospace" fill={C.sub}>Balance · kcal/day (deficit −)</text>
-              {gridAxis(bTicks, bY, "kcal", bTop)}
+              <text x={px0} y={bTop - 8} fontSize="9" fontFamily="monospace" fill={C.sub}>{isRate ? "Rate · %/week (loss −)" : "Balance · kcal/day (deficit −)"}</text>
+              {gridAxis(bTicks, bY, isRate ? "%/wk" : "kcal", bTop)}
+              {isRate && (
+                <g clipPath="url(#bClip)">
+                  <rect x={px0} width={px1 - px0} y={bY(-RATE.min)} height={Math.max(0, bY(-RATE.max) - bY(-RATE.min))} fill={CHART.expenditure} opacity="0.08" />
+                  <rect x={px0} width={px1 - px0} y={bY(RATE.max)} height={Math.max(0, bY(RATE.min) - bY(RATE.max))} fill={CHART.expenditure} opacity="0.08" />
+                </g>
+              )}
               <g clipPath="url(#bClip)">
-                <path d={bandPolygon(frame, defOf, xAt, bY)} fill={C.ink} opacity="0.08" />
-                <path d={linePath(frame, defOf, xAt, bY)} fill="none" stroke={C.ink} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                {!isRate && <path d={bandPolygon(frame, aOf, xAt, bY)} fill={C.ink} opacity="0.08" />}
+                <path d={linePath(frame, aOf, xAt, bY)} fill="none" stroke={C.ink} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
               </g>
               <line x1={px0} x2={px1} y1={bY(0)} y2={bY(0)} stroke={C.sub} strokeWidth="1" strokeDasharray="2 2" />
             </>
@@ -160,7 +177,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
               {wOf(hp) != null && <circle cx={hx} cy={wY(wOf(hp))} r="3.5" fill={CHART.weight} stroke="#fff" strokeWidth="1.5" />}
               {hp.kin != null && <circle cx={hx} cy={eY(hp.kin)} r="3.5" fill={CHART.intake} stroke="#fff" strokeWidth="1.5" />}
               {hasExp && hp.e != null && <circle cx={hx} cy={eY(hp.e)} r="3.5" fill={CHART.expenditure} stroke="#fff" strokeWidth="1.5" />}
-              {showBalance && hDef != null && <circle cx={hx} cy={bY(hDef)} r="3.5" fill={C.ink} stroke="#fff" strokeWidth="1.5" />}
+              {showAnalysis && hA != null && <circle cx={hx} cy={bY(hA)} r="3.5" fill={C.ink} stroke="#fff" strokeWidth="1.5" />}
             </g>
           )}
         </svg>
@@ -173,7 +190,8 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
             <TipRow color={CHART.weight} label="weight" value={wOf(hp) != null ? `${r1(wOf(hp))} ${weightLabel(unit)}` : "—"} />
             <TipRow color={CHART.intake} label="in" value={hp.kin != null ? `${r0(hp.kin)} kcal` : "—"} />
             {hasExp && <TipRow color={CHART.expenditure} label="burns" value={hp.e != null ? `${r0(hp.e)} kcal` : "—"} />}
-            {showBalance && <TipRow color={C.ink} label="balance" value={hDef != null ? `${hDef > 0 ? "+" : ""}${r0(hDef)} kcal · ${r0(hRate.value)} ${hRate.unit}` : "—"} />}
+            {showAnalysis && isRate && <TipRow color={C.ink} label="rate" value={hA != null ? `${hA > 0 ? "+" : ""}${r1(hA)} %/wk · ${r0(hRateW.value)} ${hRateW.unit}` : "—"} />}
+            {showAnalysis && !isRate && <TipRow color={C.ink} label="balance" value={hDef != null ? `${hDef > 0 ? "+" : ""}${r0(hDef)} kcal · ${r0(hRate.value)} ${hRate.unit}` : "—"} />}
           </div>
         )}
       </div>
@@ -182,7 +200,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
         <LegendChip color={CHART.weight} label="weight" />
         <LegendChip color={CHART.intake} label="calories in" />
         {hasExp && <LegendChip color={CHART.expenditure} label="est. expenditure" band />}
-        {showBalance && <LegendChip color={C.ink} label="balance (in − burns)" />}
+        {showAnalysis && <LegendChip color={C.ink} label={isRate ? "weight-change rate" : "balance (in − burns)"} />}
       </div>
     </div>
   );

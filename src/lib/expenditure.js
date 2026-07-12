@@ -17,12 +17,14 @@ import { matmul, transpose, matadd, symmetrize, diag, identity } from "./mat.js"
 // from DEXA body-composition studies (feline weight loss is ~73–86% fat: Opetz 2023,
 // German 2008) × per-tissue energy densities (fat ~9,440, lean ~1,816 kcal/kg; Hall 2008),
 // giving ~7,400–8,350 kcal/kg. That brackets the human figure and leans slightly higher,
-// because clinical (high-protein) feline loss is more fat-dominated. 8000 sits at the
-// high-middle, justified for the high-protein foods this app targets. NB: gaining weight
+// because clinical (high-protein) feline loss is more fat-dominated. 7800 sits near the
+// centre of that inferred range and is chosen to bias toward gentler (safer) deficits — a
+// lower ρ means a smaller deficit for a given loss rate, i.e. a higher calorie target.
+// (8000 is also defensible for strongly fat-sparing high-protein diets.) NB: gaining weight
 // costs MORE per kg (tissue synthesis is only ~60–80% efficient), but that extra heat lands
 // in the ESTIMATED expenditure via the energy balance, so ρ stays the tissue density for
 // both directions. Citations in the README. Tunable.
-export const KCAL_PER_KG = 8000;
+export const KCAL_PER_KG = 7800;
 
 export const DEFAULTS = { rho: KCAL_PER_KG, windowDays: 28, minDays: 10, alpha: 0.25, maxMissing: 0.5 };
 
