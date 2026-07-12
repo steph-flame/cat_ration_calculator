@@ -57,8 +57,17 @@ tools that share one profile, food library, and history.
 
 **Adaptive expenditure** (the energy-expenditure tool):
 - Energy balance: `expenditure ≈ mean intake − ρ × (rate of weight change)`, over a
-  trailing window, where `ρ ≈ 8000 kcal/kg` (a cat in weight management loses mostly
-  fat, so this skews above the human ~7700 blended figure). Log *dispensed* grams — a
+  trailing window. `ρ` (kcal per kg of weight change) has **no directly measured feline
+  value** — no cat analogue of the human 7,700 kcal/kg rule. We infer `ρ ≈ 8000` from
+  feline DEXA body-composition studies (weight loss is ~73–86% fat:
+  [Opetz 2023](https://pmc.ncbi.nlm.nih.gov/articles/PMC10601921/),
+  [German 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC11271239/)) × per-tissue energy
+  densities (fat ~9,440, lean ~1,816 kcal/kg;
+  [Hall 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2376744/)) → ~7,400–8,350 kcal/kg,
+  bracketing and leaning slightly above the human figure because feline loss is more
+  fat-dominated. (Weight *gain* costs more per kg — synthesis is ~60–80% efficient — but
+  that extra heat is captured in the *estimated* expenditure, so ρ stays the tissue
+  density.) Log *dispensed* grams — a
   steady grazing-leftover fraction cancels, since the estimate calibrates dispensed
   calories against the weight response. This mirrors the described behaviour of
   [MacroFactor's expenditure algorithm](https://macrofactor.com/expenditure-v3/)

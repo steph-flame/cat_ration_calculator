@@ -12,8 +12,16 @@
 import { median, mean, dailyReduce, fillDaily, ewma, linreg, addDays, diffDays, enumerateDays } from "./series.js";
 import { matmul, transpose, matadd, symmetrize, diag, identity } from "./mat.js";
 
-// Energy density of feline weight change. A cat in weight management moves mostly fat, so this
-// skews higher than the human ~7700 kcal/kg (3500/lb) blended figure. Tunable.
+// Energy density of feline weight change (ρ), kcal per kg. There is NO directly measured
+// feline value — no cat analogue of the human 7,700 kcal/kg (3,500/lb) rule. It's INFERRED
+// from DEXA body-composition studies (feline weight loss is ~73–86% fat: Opetz 2023,
+// German 2008) × per-tissue energy densities (fat ~9,440, lean ~1,816 kcal/kg; Hall 2008),
+// giving ~7,400–8,350 kcal/kg. That brackets the human figure and leans slightly higher,
+// because clinical (high-protein) feline loss is more fat-dominated. 8000 sits at the
+// high-middle, justified for the high-protein foods this app targets. NB: gaining weight
+// costs MORE per kg (tissue synthesis is only ~60–80% efficient), but that extra heat lands
+// in the ESTIMATED expenditure via the energy balance, so ρ stays the tissue density for
+// both directions. Citations in the README. Tunable.
 export const KCAL_PER_KG = 8000;
 
 export const DEFAULTS = { rho: KCAL_PER_KG, windowDays: 28, minDays: 10, alpha: 0.25, maxMissing: 0.5 };
