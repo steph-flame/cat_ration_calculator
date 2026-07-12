@@ -118,7 +118,7 @@ export default function RationPlanner() {
             <div className="flex items-center justify-between mb-2">
               <span style={{ color: C.sub }} className="text-xs">Body condition</span>
               <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
-                {["pct", "bcs"].map((m) => (<button key={m} onClick={() => set("bcMode", m)} style={{ background: p.bcMode === m ? C.spruce : "transparent", color: p.bcMode === m ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{m === "pct" ? "%" : "BCS"}</button>))}
+                {["pct", "bcs"].map((m) => (<button key={m} onClick={() => set("bcMode", m)} aria-pressed={p.bcMode === m} style={{ background: p.bcMode === m ? C.spruce : "transparent", color: p.bcMode === m ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{m === "pct" ? "%" : "BCS"}</button>))}
               </div>
             </div>
             {p.bcMode === "pct" ? (
@@ -134,7 +134,7 @@ export default function RationPlanner() {
             <span style={{ color: C.sub }} className="text-xs">Direction <span style={{ color: C.faint }}>· {t.stage}</span></span>
             <div className="grid grid-cols-2 gap-2 mt-2">
               {t.stageGoals.map((go) => { const on = goalId === go.id; return (
-                <button key={go.id} onClick={() => { if (go.id === "custom" && !num(p.customTarget)) set("customTarget", r0(t.target)); set("goal", go.id); }} style={{ borderColor: on ? C.spruce : C.line, background: on ? C.spruceSoft : "transparent" }} className="text-left border rounded-xl px-3 py-2">
+                <button key={go.id} onClick={() => { if (go.id === "custom" && !num(p.customTarget)) set("customTarget", r0(t.target)); set("goal", go.id); }} aria-pressed={on} style={{ borderColor: on ? C.spruce : C.line, background: on ? C.spruceSoft : "transparent" }} className="text-left border rounded-xl px-3 py-2">
                   <div className="text-sm font-medium" style={{ color: on ? C.spruce : C.ink }}>{go.label}</div>
                   <div style={{ color: C.faint }} className="text-xs leading-snug mt-0.5">{go.hint}</div>
                 </button>); })}
@@ -150,7 +150,7 @@ export default function RationPlanner() {
             <span style={{ color: C.sub }} className="text-xs">Energy basis</span>
             <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
               {[["formula", "Vet formula"], ["measured", "Measured"]].map(([m, lbl]) => (
-                <button key={m} onClick={() => setExpSettings({ energyBasis: m })} style={{ background: expSettings.energyBasis === m ? C.spruce : "transparent", color: expSettings.energyBasis === m ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{lbl}</button>
+                <button key={m} onClick={() => setExpSettings({ energyBasis: m })} aria-pressed={expSettings.energyBasis === m} style={{ background: expSettings.energyBasis === m ? C.spruce : "transparent", color: expSettings.energyBasis === m ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{lbl}</button>
               ))}
             </div>
           </div>
@@ -205,7 +205,7 @@ export default function RationPlanner() {
                 {[["current", "Resting × current wt", t.gentleCurrent], ["ideal", (age < 12 ? "Growth" : "Maint.") + " × ideal wt", t.gentleIdeal]].map(([id, lbl, v]) => {
                   const on = t.gentleBasis === id;
                   return (
-                    <button key={id} onClick={() => set("gentleBasis", id)} style={{ borderColor: on ? C.spruce : C.line, background: on ? C.spruceSoft : "transparent" }} className="text-left border rounded-xl px-3 py-2">
+                    <button key={id} onClick={() => set("gentleBasis", id)} aria-pressed={on} style={{ borderColor: on ? C.spruce : C.line, background: on ? C.spruceSoft : "transparent" }} className="text-left border rounded-xl px-3 py-2">
                       <div className="text-base font-mono font-semibold tabular-nums" style={{ color: on ? C.spruce : C.ink }}>{r0(v)}<span className="text-xs font-normal"> kcal</span></div>
                       <div style={{ color: C.faint }} className="text-xs mt-0.5">{lbl}</div>
                     </button>
@@ -278,7 +278,7 @@ export default function RationPlanner() {
               <div className="flex items-center justify-end gap-2 mb-2">
                 <span style={{ color: C.sub }} className="text-xs">Timeline in</span>
                 <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
-                  {[["g", "grams"], ["kcal", "kcal"]].map(([u, lbl]) => (<button key={u} onClick={() => setTr((s) => ({ ...s, timelineUnit: u }))} style={{ background: tlUnit === u ? C.spruce : "transparent", color: tlUnit === u ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{lbl}</button>))}
+                  {[["g", "grams"], ["kcal", "kcal"]].map(([u, lbl]) => (<button key={u} onClick={() => setTr((s) => ({ ...s, timelineUnit: u }))} aria-pressed={tlUnit === u} style={{ background: tlUnit === u ? C.spruce : "transparent", color: tlUnit === u ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{lbl}</button>))}
                 </div>
               </div>
               <div style={{ borderColor: C.line }} className="border rounded-xl overflow-x-auto">

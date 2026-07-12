@@ -65,7 +65,7 @@ export default function Expenditure() {
             <div style={{ color: C.sub }} className="text-xs uppercase tracking-widest font-mono">Measured maintenance</div>
             <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }} title="v3 = unobserved-components (separates gut-fill transients). v2 = Kalman. v1 = EWMA + regression.">
               {[["v3", "v3"], ["v2", "v2"], ["v1", "v1"]].map(([a, lbl]) => (
-                <button key={a} onClick={() => setExpSettings({ algo: a })} style={{ background: expSettings.algo === a ? C.spruce : "transparent", color: expSettings.algo === a ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
+                <button key={a} onClick={() => setExpSettings({ algo: a })} aria-pressed={expSettings.algo === a} style={{ background: expSettings.algo === a ? C.spruce : "transparent", color: expSettings.algo === a ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
               ))}
             </div>
           </div>
@@ -108,11 +108,11 @@ export default function Expenditure() {
                 {analysis !== "none" && (
                   <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
                     {[["rate", "%/wk"], ["kcal", "± kcal"]].map(([m, l]) => (
-                      <button key={m} onClick={() => setAnalysis(m)} style={{ background: analysis === m ? C.spruce : "transparent", color: analysis === m ? "#fff" : C.sub }} className="text-xs px-1.5 py-1 font-mono">{l}</button>
+                      <button key={m} onClick={() => setAnalysis(m)} aria-pressed={analysis === m} style={{ background: analysis === m ? C.spruce : "transparent", color: analysis === m ? "#fff" : C.sub }} className="text-xs px-1.5 py-1 font-mono">{l}</button>
                     ))}
                   </div>
                 )}
-                <button onClick={() => setAnalysis((a) => (a === "none" ? "rate" : "none"))} style={{ borderColor: C.line, color: analysis !== "none" ? C.spruce : C.sub, background: analysis !== "none" ? C.spruceSoft : "transparent" }} className="text-xs font-mono border rounded-lg px-2 py-1">analysis</button>
+                <button onClick={() => setAnalysis((a) => (a === "none" ? "rate" : "none"))} aria-pressed={analysis !== "none"} style={{ borderColor: C.line, color: analysis !== "none" ? C.spruce : C.sub, background: analysis !== "none" ? C.spruceSoft : "transparent" }} className="text-xs font-mono border rounded-lg px-2 py-1">analysis</button>
               </div>
             </div>
           </section>
@@ -125,7 +125,7 @@ export default function Expenditure() {
               <div className="flex items-center gap-2"><Target size={16} style={{ color: C.amber }} /><h2 className="font-medium">Feeding plan</h2></div>
               <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
                 {DIRECTIONS.map((d) => (
-                  <button key={d} onClick={() => setExpSettings({ direction: d })} style={{ background: dir === d ? C.spruce : "transparent", color: dir === d ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{dirLabel[d]}</button>
+                  <button key={d} onClick={() => setExpSettings({ direction: d })} aria-pressed={dir === d} style={{ background: dir === d ? C.spruce : "transparent", color: dir === d ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{dirLabel[d]}</button>
                 ))}
               </div>
             </div>

@@ -138,7 +138,7 @@ export function dailyWeightWithVariance(entries, { outlierKg = 0.2 } = {}) {
 // maxJumpKg gates physically impossible day-over-day swings (a spurious single reading):
 // real feline weight change is < ~15 g/day even on an aggressive plan, and gut-fill swings
 // are smaller than this, so anything past it is a bad read and skips the update.
-export const KALMAN_DEFAULTS = { rho: KCAL_PER_KG, qW: 1e-5, qE: 2.0, priorKcal: 200, priorSdKcal: 120, minDays: 10, maxMissing: 0.5, recentIntakeDays: 7, maxJumpKg: 0.3 };
+export const KALMAN_DEFAULTS = { rho: KCAL_PER_KG, qW: 1e-5, qE: 2.0, priorKcal: 200, priorSdKcal: 120, minDays: 10, maxMissing: 0.5, recentIntakeDays: 7, maxJumpKg: 0.3, maxReject: 3 };
 
 export function kalmanEstimateExpenditure(weightEntries = [], intakeEntries = [], opts = {}) {
   const P = { ...KALMAN_DEFAULTS, ...opts };
@@ -164,27 +164,36 @@ export function kalmanEstimateExpenditure(weightEntries = [], intakeEntries = []
   let x = [wByDay.get(first).z, P.priorKcal];
   let Pcov = [[wByDay.get(first).R, 0], [0, P.priorSdKcal * P.priorSdKcal]];
   const trend = [{ date: first, kg: x[0], e: x[1], sd: Math.sqrt(Pcov[1][1]) }];
+  let lastAcceptK = 0, rejects = 0, accepted = 0;
 
   for (let k = 1; k < days.length; k++) {
     const d = days[k];
     // predict
     const xPred = [x[0] + (intakeOn(d) - x[1]) / rho, x[1]];
     const Ppred = matadd(matmul(matmul(F, Pcov), transpose(F)), Q);
-    // update on a scalar weight measurement (H = [1, 0]) when we have one that isn't a
-    // physically impossible jump from where we expect her to be
+    // update on a scalar weight measurement (H = [1, 0]). Gate against a physically impossible
+    // jump, but SCALE the allowance by the gap since the last accepted reading (the prediction
+    // drifts over gaps), and force-accept after maxReject in a row so a bad prior can never pin
+    // the estimate to itself forever.
     const meas = wByDay.get(d);
-    if (meas && Math.abs(meas.z - xPred[0]) <= P.maxJumpKg) {
-      const { z, R } = meas;
-      const S = Ppred[0][0] + R;
-      const K0 = Ppred[0][0] / S, K1 = Ppred[1][0] / S;
-      const y = z - xPred[0]; // innovation = the prediction error
-      x = [xPred[0] + K0 * y, xPred[1] + K1 * y];
-      Pcov = symmetrize([
-        [(1 - K0) * Ppred[0][0], (1 - K0) * Ppred[0][1]],
-        [Ppred[1][0] - K1 * Ppred[0][0], Ppred[1][1] - K1 * Ppred[0][1]],
-      ]);
+    if (meas) {
+      const gate = P.maxJumpKg * Math.max(1, k - lastAcceptK);
+      const y = meas.z - xPred[0]; // innovation = prediction error
+      if (Math.abs(y) <= gate || rejects >= P.maxReject) {
+        const { R } = meas;
+        const S = Ppred[0][0] + R;
+        const K0 = Ppred[0][0] / S, K1 = Ppred[1][0] / S;
+        x = [xPred[0] + K0 * y, xPred[1] + K1 * y];
+        Pcov = symmetrize([
+          [(1 - K0) * Ppred[0][0], (1 - K0) * Ppred[0][1]],
+          [Ppred[1][0] - K1 * Ppred[0][0], Ppred[1][1] - K1 * Ppred[0][1]],
+        ]);
+        lastAcceptK = k; rejects = 0; accepted += 1;
+      } else {
+        rejects += 1; x = xPred; Pcov = Ppred;
+      }
     } else {
-      x = xPred; Pcov = Ppred; // no reading, or a rejected outlier → prediction only
+      x = xPred; Pcov = Ppred; // no reading → prediction only
     }
     trend.push({ date: d, kg: x[0], e: x[1], sd: Math.sqrt(Pcov[1][1]) });
   }
@@ -197,7 +206,7 @@ export function kalmanEstimateExpenditure(weightEntries = [], intakeEntries = []
   const trendWeightKg = x[0];
   const ratePctPerWeek = trendWeightKg > 0 ? (rateKgPerWeek / trendWeightKg) * 100 : 0;
   const span = diffDays(first, last) + 1;
-  const enoughData = span >= P.minDays && present.length >= 2 && missingIntake <= P.maxMissing;
+  const enoughData = span >= P.minDays && present.length >= 2 && missingIntake <= P.maxMissing && accepted >= 2;
 
   return { enoughData, kcal, sd, low: kcal - 1.96 * sd, high: kcal + 1.96 * sd,
     trendWeightKg, rateKgPerWeek, ratePctPerWeek, nDays: span, missingIntake, trend };
@@ -215,7 +224,7 @@ export function kalmanEstimateExpenditure(weightEntries = [], intakeEntries = []
 export const V3_DEFAULTS = {
   rho: KCAL_PER_KG, qW: 1e-5, qE: 10, qT: 0.0025, phi: 0.5,
   priorKcal: 200, priorSdKcal: 120, transientSd0: 0.06,
-  minDays: 10, maxMissing: 0.5, recentIntakeDays: 7, maxJumpKg: 0.3,
+  minDays: 10, maxMissing: 0.5, recentIntakeDays: 7, maxJumpKg: 0.3, maxReject: 3,
 };
 
 export function ucEstimateExpenditure(weightEntries = [], intakeEntries = [], opts = {}) {
@@ -243,6 +252,7 @@ export function ucEstimateExpenditure(weightEntries = [], intakeEntries = [], op
   let x = [wByDay.get(first).z, P.priorKcal, 0];
   let Pcov = diag([wByDay.get(first).R, P.priorSdKcal * P.priorSdKcal, P.transientSd0 * P.transientSd0]);
   const trend = [{ date: first, kg: x[0], e: x[1], sd: Math.sqrt(Pcov[1][1]) }];
+  let lastAcceptK = 0, rejects = 0, accepted = 0;
 
   for (let k = 1; k < days.length; k++) {
     const d = days[k];
@@ -250,17 +260,24 @@ export function ucEstimateExpenditure(weightEntries = [], intakeEntries = [], op
     const xPred = [x[0] - x[1] / rho + intakeOn(d) / rho, x[1], P.phi * x[2]];
     const Ppred = matadd(matmul(matmul(F, Pcov), transpose(F)), Q);
     const zPred = xPred[0] + xPred[2]; // H x⁻
+    // gate scaled by the gap since the last accepted reading, with force-accept after maxReject
+    // (see the v2 comment) so the estimate can never stay pinned to a bad prior.
     const meas = wByDay.get(d);
-    if (meas && Math.abs(meas.z - zPred) <= P.maxJumpKg) {
-      const { z, R } = meas;
-      // scalar measurement: S = H P Hᵀ + R ; PHt = P Hᵀ (H = [1,0,1])
-      const PHt = [Ppred[0][0] + Ppred[0][2], Ppred[1][0] + Ppred[1][2], Ppred[2][0] + Ppred[2][2]];
-      const S = PHt[0] + PHt[2] + R;
-      const K = PHt.map((v) => v / S);
-      const y = z - zPred;
-      x = xPred.map((xi, i) => xi + K[i] * y);
-      const ImKH = identity(3).map((row, i) => row.map((v, j) => v - K[i] * H[j]));
-      Pcov = symmetrize(matmul(ImKH, Ppred));
+    if (meas) {
+      const gate = P.maxJumpKg * Math.max(1, k - lastAcceptK);
+      const y = meas.z - zPred;
+      if (Math.abs(y) <= gate || rejects >= P.maxReject) {
+        const { R } = meas;
+        const PHt = [Ppred[0][0] + Ppred[0][2], Ppred[1][0] + Ppred[1][2], Ppred[2][0] + Ppred[2][2]];
+        const S = PHt[0] + PHt[2] + R;
+        const K = PHt.map((v) => v / S);
+        x = xPred.map((xi, i) => xi + K[i] * y);
+        const ImKH = identity(3).map((row, i) => row.map((v, j) => v - K[i] * H[j]));
+        Pcov = symmetrize(matmul(ImKH, Ppred));
+        lastAcceptK = k; rejects = 0; accepted += 1;
+      } else {
+        rejects += 1; x = xPred; Pcov = Ppred;
+      }
     } else {
       x = xPred; Pcov = Ppred;
     }
@@ -275,7 +292,7 @@ export function ucEstimateExpenditure(weightEntries = [], intakeEntries = [], op
   const trendWeightKg = x[0];
   const ratePctPerWeek = trendWeightKg > 0 ? (rateKgPerWeek / trendWeightKg) * 100 : 0;
   const span = diffDays(first, last) + 1;
-  const enoughData = span >= P.minDays && present.length >= 2 && missingIntake <= P.maxMissing;
+  const enoughData = span >= P.minDays && present.length >= 2 && missingIntake <= P.maxMissing && accepted >= 2;
 
   return { enoughData, kcal, sd, low: kcal - 1.96 * sd, high: kcal + 1.96 * sd,
     trendWeightKg, rateKgPerWeek, ratePctPerWeek, nDays: span, missingIntake, trend };

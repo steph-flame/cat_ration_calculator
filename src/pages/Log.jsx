@@ -37,7 +37,7 @@ export default function Log() {
           </div>
           <div className="flex rounded-lg overflow-hidden border shrink-0 mt-1" style={{ borderColor: C.line }}>
             {["kg", "lb"].map((u) => (
-              <button key={u} onClick={() => setExpSettings({ unit: u })} style={{ background: unit === u ? C.spruce : "transparent", color: unit === u ? "#fff" : C.sub }} className="text-xs px-2.5 py-1.5 font-mono">{u}</button>
+              <button key={u} onClick={() => setExpSettings({ unit: u })} aria-pressed={unit === u} style={{ background: unit === u ? C.spruce : "transparent", color: unit === u ? "#fff" : C.sub }} className="text-xs px-2.5 py-1.5 font-mono">{u}</button>
             ))}
           </div>
         </div>
@@ -114,7 +114,7 @@ function WeightLog({ log, unit }) {
         <div style={{ color: C.sub }} className="text-xs mb-1">Measured with</div>
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(WEIGH_METHODS).map(([key, m]) => (
-            <button key={key} onClick={() => setMethod(key)}
+            <button key={key} onClick={() => setMethod(key)} aria-pressed={method === key}
               style={{ borderColor: method === key ? C.spruce : C.line, background: method === key ? C.spruceSoft : "transparent", color: method === key ? C.spruce : C.sub }}
               className="text-xs border rounded-lg px-2 py-1 font-mono">{m.label}</button>
           ))}

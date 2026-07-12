@@ -95,8 +95,22 @@ const tikiAfterDark = TIKI_AFTER_DARK.flatMap(([flavor, k28, k55]) => [
   { name: `Tiki Cat After Dark ${flavor} — 5.5 oz can`, mode: "perUnit", kcalPerUnit: k55, gramsPerUnit: 156 },
 ]);
 
+// Weruva "Pumpkin Patch Up!" pouches (a pumpkin-purée supplement/topper). kcal per pouch
+// from weruva.com (2026); pouches are 1.05 oz ≈ 30 g and 2.8 oz ≈ 79 g.
+const WERUVA_PUMPKIN = [
+  // flavor, 1.05 oz kcal, 2.8 oz kcal
+  ["Puréed Pumpkin", 5, 15],
+  ["with Ginger & Turmeric", 4, 12],
+  ["with Coconut Oil & Flaxseeds", 16, 43],
+];
+const weruvaPumpkin = WERUVA_PUMPKIN.flatMap(([flavor, k105, k28]) => [
+  { name: `Weruva Pumpkin Patch Up! ${flavor} — 1.05 oz pouch`, mode: "perUnit", kcalPerUnit: k105, gramsPerUnit: 30 },
+  { name: `Weruva Pumpkin Patch Up! ${flavor} — 2.8 oz pouch`, mode: "perUnit", kcalPerUnit: k28, gramsPerUnit: 79 },
+]);
+
 export const BUILTIN_FOODS = [
   ...tikiAfterDark,
+  ...weruvaPumpkin,
   { name: "Instinct Ultimate Protein Chicken", mode: "perKg", kcalPerKg: 4470, gramsPerCup: 110 },
   { name: "Orijen Original Cat", mode: "perKg", kcalPerKg: 4150, gramsPerCup: 124 },
   { name: "Orijen Fit & Trim", mode: "perKg", kcalPerKg: 3700, gramsPerCup: 120 },

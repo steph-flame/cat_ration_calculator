@@ -14,3 +14,24 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
 }
+
+/* Keyboard focus ring for every interactive element — many inputs/buttons set
+   `outline-none`, so use box-shadow (which those utilities don't touch). Pointer
+   clicks stay clean via :focus-visible. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role="switch"]:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #f6f7f4, 0 0 0 4px #3e5c50;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

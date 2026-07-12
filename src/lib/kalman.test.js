@@ -90,4 +90,14 @@ describe("robustness", () => {
   it("empty log → not enough data", () => {
     expect(kalmanEstimateExpenditure([], []).enoughData).toBe(false);
   });
+  it("does not stay pinned to a wrong prior when readings keep contradicting it", () => {
+    // large sustained drop vs. a far-off prior: the outlier gate must eventually force-accept
+    // (not report 'stable at prior' forever).
+    const W = [], I = [];
+    let w = 8.0;
+    for (let d = 0; d < 15; d++) { const date = addDays("2026-02-01", d); W.push({ date, value: w, method: "petScale" }); I.push({ date, value: 200 }); w -= 0.4; }
+    const r = kalmanEstimateExpenditure(W, I, { priorKcal: 200 });
+    expect(Math.abs(r.kcal - 200)).toBeGreaterThan(50); // moved off the prior
+    expect(r.rateKgPerWeek).toBeLessThan(0);            // registers the loss, not "stable"
+  });
 });

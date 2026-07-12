@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { C, CHART } from "../theme.js";
 import { r0, r1 } from "../lib/util.js";
 import { extent, niceTicks, linScale } from "../lib/scale.js";
@@ -44,6 +44,16 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
 
   const W = 640, padL = 46, padR = 14;
   const px0 = padL, px1 = W - padR;
+  // Enlarge SVG-unit font sizes on narrow screens: the viewBox scales to the container, so a
+  // hardcoded 9px would render at ~4.5px on a 320px phone. fs = W/displayed-px, clamped.
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver((e) => setWidth(e[0].contentRect.width));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  const fs = clamp(W / Math.max(width || W, 220), 1, 2);
   const wTop = 12, wH = 74;
   const eTop = wTop + wH + 30, eH = 96;
   const bTop = eTop + eH + 30, bH = 74;
@@ -109,26 +119,32 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
       {ticks.map((tv) => (
         <g key={tv}>
           <line x1={px0} x2={px1} y1={yScale(tv)} y2={yScale(tv)} stroke={C.line} strokeWidth="1" />
-          <text x={px0 - 6} y={yScale(tv) + 3} textAnchor="end" fontSize="9" fontFamily="monospace" fill={C.faint}>{fmtTick(tv)}</text>
+          <text x={px0 - 6} y={yScale(tv) + 3} textAnchor="end" fontSize={9 * fs} fontFamily="monospace" fill={C.faint}>{fmtTick(tv)}</text>
         </g>
       ))}
-      <text x={px0 - 6} y={panelTop - 3} textAnchor="end" fontSize="8" fontFamily="monospace" fill={C.faint}>{unitLbl}</text>
+      <text x={px0 - 6} y={panelTop - 3} textAnchor="end" fontSize={8 * fs} fontFamily="monospace" fill={C.faint}>{unitLbl}</text>
     </g>
   );
+
+  const onTouch = (ev) => { const t = ev.touches && ev.touches[0]; if (t) onMove(t); };
+  const summary = `Timeline over ${range}. Latest weight ${r1(wOf(last))} ${weightLabel(unit)}`
+    + (hasExp && last.e != null ? `, estimated expenditure ${r0(last.e)} kcal/day` : "")
+    + (last.kin != null ? `, ${r0(last.kin)} kcal in` : "") + ".";
 
   return (
     <div>
       <RangeRow range={range} onRange={onRange} ranges={ranges} />
       <div style={{ position: "relative" }} className="mt-2">
         <svg ref={ref} viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", touchAction: "none" }}
-          onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+          role="img" aria-label={summary}
+          onMouseMove={onMove} onMouseLeave={() => setHover(null)} onTouchStart={onTouch} onTouchMove={onTouch}>
           <defs>
             <clipPath id="eClip"><rect x={px0} y={eTop} width={px1 - px0} height={eH} /></clipPath>
             <clipPath id="bClip"><rect x={px0} y={bTop} width={px1 - px0} height={bH} /></clipPath>
           </defs>
 
-          <text x={px0} y={wTop - 3} fontSize="9" fontFamily="monospace" fill={C.sub}>Weight · {weightLabel(unit)}</text>
-          <text x={px0} y={eTop - 8} fontSize="9" fontFamily="monospace" fill={C.sub}>Energy · kcal/day</text>
+          <text x={px0} y={wTop - 3} fontSize={9 * fs} fontFamily="monospace" fill={C.sub}>Weight · {weightLabel(unit)}</text>
+          <text x={px0} y={eTop - 8} fontSize={9 * fs} fontFamily="monospace" fill={C.sub}>Energy · kcal/day</text>
           {gridAxis(wTicks, wY, weightLabel(unit), wTop)}
           {gridAxis(eTicks, eY, "kcal", eTop)}
 
@@ -145,7 +161,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
           {/* analysis panel (optional): weight-change rate or caloric balance */}
           {showAnalysis && (
             <>
-              <text x={px0} y={bTop - 8} fontSize="9" fontFamily="monospace" fill={C.sub}>{isRate ? "Rate · %/week (loss −)" : "Balance · kcal/day (deficit −)"}</text>
+              <text x={px0} y={bTop - 8} fontSize={9 * fs} fontFamily="monospace" fill={C.sub}>{isRate ? "Rate · %/week (loss −)" : "Balance · kcal/day (deficit −)"}</text>
               {gridAxis(bTicks, bY, isRate ? "%/wk" : "kcal", bTop)}
               {isRate && (
                 <g clipPath="url(#bClip)">
@@ -154,7 +170,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
                   {[-RATE.min, -RATE.max, RATE.min, RATE.max].map((v) => (
                     <line key={v} x1={px0} x2={px1} y1={bY(v)} y2={bY(v)} stroke={CHART.expenditure} strokeWidth="1" strokeDasharray="2 3" opacity="0.55" />
                   ))}
-                  <text x={px1 - 2} y={bY(-RATE.max) - 3} textAnchor="end" fontSize="8" fontFamily="monospace" fill={CHART.expenditure}>safe {RATE.min}–{RATE.max}%/wk</text>
+                  <text x={px1 - 2} y={bY(-RATE.max) - 3} textAnchor="end" fontSize={8 * fs} fontFamily="monospace" fill={CHART.expenditure}>safe {RATE.min}–{RATE.max}%/wk</text>
                 </g>
               )}
               <g clipPath="url(#bClip)">
@@ -166,12 +182,12 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
           )}
 
           {/* end-of-line direct labels */}
-          <EndDot x={xAt(n - 1)} y={wY(wOf(last))} color={CHART.weight} label={`${r1(wOf(last))} ${weightLabel(unit)}`} />
-          {hasExp && last.e != null && <EndDot x={xAt(n - 1)} y={eY(last.e)} color={CHART.expenditure} label={`${r0(last.e)}`} />}
+          <EndDot x={xAt(n - 1)} y={wY(wOf(last))} color={CHART.weight} label={`${r1(wOf(last))} ${weightLabel(unit)}`} fs={fs} />
+          {hasExp && last.e != null && <EndDot x={xAt(n - 1)} y={eY(last.e)} color={CHART.expenditure} label={`${r0(last.e)}`} fs={fs} />}
 
           {/* x-axis */}
           {xLabels.map((i) => (
-            <text key={i} x={clamp(xAt(i), px0 + 8, px1 - 8)} y={xAxisY + 14} textAnchor="middle" fontSize="9" fontFamily="monospace" fill={C.faint}>{fmtDate(frame[i].date)}</text>
+            <text key={i} x={clamp(xAt(i), px0 + 8, px1 - 8)} y={xAxisY + 14} textAnchor="middle" fontSize={9 * fs} fontFamily="monospace" fill={C.faint}>{fmtDate(frame[i].date)}</text>
           ))}
 
           {/* hover crosshair */}
@@ -207,6 +223,22 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
         {showAnalysis && <LegendChip color={C.ink} label={isRate ? "weight-change rate" : "balance (in − burns)"} />}
         {showAnalysis && isRate && <LegendChip color={CHART.expenditure} label={`safe ${RATE.min}–${RATE.max}%/wk`} band />}
       </div>
+
+      {/* screen-reader / no-pointer data fallback for the SVG */}
+      <table className="sr-only">
+        <caption>{summary}</caption>
+        <thead><tr><th>Date</th><th>Weight ({weightLabel(unit)})</th><th>Calories in (kcal)</th>{hasExp && <th>Est. expenditure (kcal)</th>}</tr></thead>
+        <tbody>
+          {frame.map((p) => (
+            <tr key={p.date}>
+              <td>{p.date}</td>
+              <td>{wOf(p) != null ? r1(wOf(p)) : "—"}</td>
+              <td>{p.kin != null ? r0(p.kin) : "—"}</td>
+              {hasExp && <td>{p.e != null ? r0(p.e) : "—"}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -217,18 +249,18 @@ function RangeRow({ range, onRange, ranges }) {
       <span style={{ color: C.sub }} className="text-xs">Timeline</span>
       <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
         {ranges.map((r) => (
-          <button key={r.key} onClick={() => onRange(r.key)} style={{ background: range === r.key ? C.spruce : "transparent", color: range === r.key ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{r.label}</button>
+          <button key={r.key} onClick={() => onRange(r.key)} aria-pressed={range === r.key} style={{ background: range === r.key ? C.spruce : "transparent", color: range === r.key ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{r.label}</button>
         ))}
       </div>
     </div>
   );
 }
 
-function EndDot({ x, y, color, label }) {
+function EndDot({ x, y, color, label, fs = 1 }) {
   return (
     <g>
       <circle cx={x} cy={y} r="3" fill={color} stroke="#fff" strokeWidth="1.5" />
-      <text x={x - 6} y={y - 6} textAnchor="end" fontSize="9" fontFamily="monospace" fill={color} fontWeight="600">{label}</text>
+      <text x={x - 6} y={y - 6} textAnchor="end" fontSize={9 * fs} fontFamily="monospace" fill={color} fontWeight="600">{label}</text>
     </g>
   );
 }

@@ -17,6 +17,20 @@ const hasStore = () => {
   }
 };
 
+// Can we actually persist? Some browsers (Safari private mode) expose localStorage but throw
+// on write — so probe with a real set/remove. The UI warns when this is false.
+export function probeStorage() {
+  try {
+    if (!hasStore()) return false;
+    const k = "__catration_probe__";
+    window.localStorage.setItem(k, "1");
+    window.localStorage.removeItem(k);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const store = {
   async load() {
     try {
