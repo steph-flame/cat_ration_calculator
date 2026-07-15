@@ -1,35 +1,14 @@
-import { Scale, Activity, NotebookPen, ChevronRight, Download, Upload } from "lucide-react";
+import { Scale, Activity, NotebookPen, ChevronRight, Settings as SettingsIcon } from "lucide-react";
 import { C } from "../theme.js";
 import { useApp } from "../state/AppState.jsx";
 import { r0, r1 } from "../lib/util.js";
 import { toDisplayWeight, weightLabel } from "../lib/units.js";
 import { resolveTarget } from "../lib/targeting.js";
-import { validateImport } from "../lib/validate.js";
 
 // Landing page: pick a tool. Shows a one-line status from each so the home screen is useful,
 // not just a menu.
 export default function Home() {
-  const { p, t, expenditure, weightLog, intakeLog, expSettings, exportData, importData } = useApp();
-  const doExport = () => {
-    const blob = new Blob([exportData()], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `cat-data-${(p.name || "cat").replace(/\s+/g, "-").toLowerCase()}.json`;
-    a.click(); URL.revokeObjectURL(url);
-  };
-  const doImport = (ev) => {
-    const file = ev.target.files?.[0]; ev.target.value = "";
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(reader.result);
-        if (!validateImport(parsed)) throw new Error("malformed export shape");
-        importData(parsed);
-      } catch { window.alert("Couldn't read that file — it doesn't look like a Cat Feeding export."); }
-    };
-    reader.readAsText(file);
-  };
+  const { p, t, expenditure, weightLog, intakeLog, expSettings } = useApp();
   const unit = expSettings.unit || "kg";
   const expStatus = expenditure.enoughData
     ? `measured ${r0(expenditure.kcal)} kcal · ${r1(toDisplayWeight(expenditure.trendWeightKg, unit))} ${weightLabel(unit)}`
@@ -76,14 +55,10 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2 mt-6">
-          <button onClick={doExport} style={{ borderColor: C.line, color: C.sub }} className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-white"><Download size={13} /> Export data</button>
-          <label style={{ borderColor: C.line, color: C.sub }} className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-white cursor-pointer">
-            <Upload size={13} /> Import
-            <input type="file" accept="application/json,.json" onChange={doImport} className="sr-only" />
-          </label>
+          <a href="#/settings" style={{ borderColor: C.line, color: C.sub }} className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-white"><SettingsIcon size={13} /> Settings — cats, export/import, data</a>
         </div>
         <p style={{ color: C.faint }} className="text-xs leading-relaxed mt-3 px-1">
-          A planning aid, not veterinary advice. Saved on this device only — Export to back up or move to another browser.
+          A planning aid, not veterinary advice. Saved on this device only — Export from Settings to back up or move to another browser.
         </p>
       </div>
     </div>

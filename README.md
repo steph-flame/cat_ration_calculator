@@ -46,7 +46,9 @@ tools that share one profile, food library, and history.
 - **kg / lb** toggle throughout; a separate **Log** page (weigh-ins grouped by day with a
   daily average and expandable detail; food grouped by day).
 
-- Everything **saves automatically** on your device (localStorage).
+- Everything **saves automatically** on your device (localStorage). Track **multiple cats**
+  — each keeps its own profile, ration, and weigh-in/intake history; they share one food
+  library. Manage cats, export/import a backup, and per-cat/global "erase" from Settings.
 - **Install (PWA)** — Add to Home Screen for an offline-capable, standalone app icon.
   iOS Safari evicts localStorage after 7 days unused in a browser tab; installed apps
   are exempt, so this is data-loss protection for your weigh-in history, not just
@@ -118,16 +120,19 @@ src/
     scale.js        chart scale math (extent, nice ticks, linear scale)
     timeline.js     assembles the weight/intake/expenditure frame + range clipping
     storage.js      persistence only — one JSON blob in localStorage
+    catStore.js     pure cats-map reducers (add/delete/clear-history/switch a cat)
+    migrate.js      v1 (single flat cat) → v2 (multi-cat) storage migration
+    validate.js     shape-check an imported blob (accepts v1 or v2)
     util.js         tiny shared number/id helpers
   state/
-    AppState.jsx    one provider owning all persisted state + derived values
+    AppState.jsx    one provider owning all persisted state + derived values, scoped
+                     to the active cat (see catStore.js for the multi-cat reducers)
   hooks/
-    useFoodList.js     an editable food list (the ration, the start blend)
     useFoodLibrary.js  the saved-food library: auto-save, edit, search
-    useLog.js          generic dated-entry log (weight log, intake log)
     useHashRoute.js    dependency-free hash router (GitHub-Pages-safe)
   pages/
-    Home.jsx        landing → the two tools
+    Home.jsx        landing → the tools
+    Settings.jsx    manage cats, export/import, and per-cat/global erase
     RationPlanner.jsx / Expenditure.jsx   UI only, read shared state via useApp()
   components/       RationRow, FoodSearch, SavedFoods, TimelineChart, primitives
   App.jsx           provider + router shell
@@ -136,11 +141,11 @@ research/
   v3_expenditure.py Python prototype that validated & tuned the v3 model before porting
 ```
 
-Layers never cross the wrong way: `storage.js` knows nothing about cats; the `lib/`
-logic knows nothing about React; pages are pure views over `AppState`. `storage.js`
-exposes an async `{ load, save, clear }` interface, so swapping localStorage for a
-backend (fetch, IndexedDB, a sync service) is a one-file change — and the same seam
-is where a Litter-Robot / smart-feeder weight feed would land.
+Layers never cross the wrong way: `storage.js` knows nothing about cats (that's
+`catStore.js`/`migrate.js`); the `lib/` logic knows nothing about React; pages are pure
+views over `AppState`. `storage.js` exposes an async `{ load, save, clear }` interface, so
+swapping localStorage for a backend (fetch, IndexedDB, a sync service) is a one-file
+change — and the same seam is where a Litter-Robot / smart-feeder weight feed would land.
 
 ## Develop
 

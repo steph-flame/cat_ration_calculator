@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Info, X } from "lucide-react";
+import { Info, X, Cat, Settings as SettingsIcon, ChevronsUpDown } from "lucide-react";
 import { C } from "./theme.js";
 import { AppProvider, useApp } from "./state/AppState.jsx";
 import { useHashRoute } from "./hooks/useHashRoute.js";
@@ -8,8 +8,31 @@ import Home from "./pages/Home.jsx";
 import RationPlanner from "./pages/RationPlanner.jsx";
 import Expenditure from "./pages/Expenditure.jsx";
 import Log from "./pages/Log.jsx";
+import Settings from "./pages/Settings.jsx";
 
-const PAGES = { home: Home, ration: RationPlanner, expenditure: Expenditure, log: Log };
+const PAGES = { home: Home, ration: RationPlanner, expenditure: Expenditure, log: Log, settings: Settings };
+
+// Compact app-shell header: a settings link always, plus (once there's more than one cat) a
+// tap-to-cycle active-cat switcher — dense to match the rest of the chrome (banners, nav rows).
+function Header({ catsSummary, activeCatId, switchCat }) {
+  const active = catsSummary.find((c) => c.id === activeCatId);
+  const cycle = () => {
+    const idx = catsSummary.findIndex((c) => c.id === activeCatId);
+    switchCat(catsSummary[(idx + 1) % catsSummary.length].id);
+  };
+  return (
+    <div style={{ borderColor: C.line, background: C.paper }} className="w-full border-b">
+      <div className="max-w-xl mx-auto px-4 py-1.5 flex items-center justify-between text-xs font-mono">
+        {catsSummary.length > 1 ? (
+          <button onClick={cycle} title="Switch cat" style={{ color: C.spruce }} className="inline-flex items-center gap-1.5 hover:underline">
+            <Cat size={13} /> {active?.name || "unnamed cat"} <ChevronsUpDown size={11} style={{ color: C.faint }} />
+          </button>
+        ) : <span />}
+        <a href="#/settings" style={{ color: C.sub }} className="inline-flex items-center gap-1 hover:underline"><SettingsIcon size={12} /> settings</a>
+      </div>
+    </div>
+  );
+}
 
 function Banner({ children, tone, onClose }) {
   const bg = tone === "warn" ? C.amberSoft : C.spruceSoft;
@@ -34,7 +57,7 @@ const showInstallNudge = () =>
   !isBannerDismissed();
 
 function Router() {
-  const { loaded, firstRun, storageOk } = useApp();
+  const { loaded, firstRun, storageOk, catsSummary, activeCatId, switchCat } = useApp();
   const route = useHashRoute("home");
   const [introClosed, setIntroClosed] = useState(false);
   const [installNudgeClosed, setInstallNudgeClosed] = useState(false);
@@ -42,11 +65,12 @@ function Router() {
   const Page = PAGES[route] || Home;
   return (
     <>
+      <Header catsSummary={catsSummary} activeCatId={activeCatId} switchCat={switchCat} />
       {!storageOk && (
-        <Banner tone="warn">This browser isn't letting the app save (private mode?). Changes won't persist — use Export on the home screen to keep your data.</Banner>
+        <Banner tone="warn">This browser isn't letting the app save (private mode?). Changes won't persist — use Export in Settings to keep your data.</Banner>
       )}
       {firstRun && !introClosed && (
-        <Banner onClose={() => setIntroClosed(true)}>Showing example data (a sample cat). Set the cat's name, date of birth, and a weigh-in on the ration planner to make it yours — or use "erase all" to start fresh.</Banner>
+        <Banner onClose={() => setIntroClosed(true)}>Showing example data (a sample cat). Set the cat's name, date of birth, and a weigh-in on the ration planner to make it yours — or head to Settings to start fresh or add another cat.</Banner>
       )}
       {!installNudgeClosed && showInstallNudge() && (
         <Banner onClose={() => { dismissBanner(); setInstallNudgeClosed(true); }}>

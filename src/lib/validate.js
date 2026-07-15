@@ -1,6 +1,10 @@
 // Shape-check an imported data blob before it's applied to state. Not a full schema —
 // just enough to catch "this isn't our JSON" and reject up front, so a malformed file
 // can't half-apply (some fields adopted, others left stale). Pure.
+//
+// Accepts two export shapes: v1 (a legacy flat single-cat blob — no `v` field) and v2
+// (`{ v: 2, cats: {...}, ... }`, multi-cat). AppState migrates an accepted v1 blob on import
+// (see lib/migrate.js); this module only judges whether the shape is well-formed.
 
 const isPlainObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 const arrOf = (v, pred) => Array.isArray(v) && v.every(pred);
@@ -11,16 +15,44 @@ const isFoodEntry = (f) => isPlainObject(f) && typeof f.name === "string" && typ
 const isWeightEntry = (e) => isPlainObject(e) && typeof e.date === "string" && typeof e.kg === "number";
 const isIntakeEntry = (e) => isPlainObject(e) && typeof e.date === "string" && typeof e.kcal === "number";
 
-export function validateImport(d) {
+// Fields that live on one cat: profile, ration, start, weightLog, intakeLog, tr, expSettings.
+// Shared by both the top-level v1 shape and each per-cat entry inside a v2 blob's `cats` map.
+function validateCatShape(d) {
   if (!isPlainObject(d)) return false;
   if (d.profile !== undefined && !isPlainObject(d.profile)) return false;
   if (d.ration !== undefined && !arrOf(d.ration, isFoodEntry)) return false;
   if (d.start !== undefined && !arrOf(d.start, isFoodEntry)) return false;
-  if (d.library !== undefined && !arrOf(d.library, isFoodEntry)) return false;
   if (d.weightLog !== undefined && !arrOf(d.weightLog, isWeightEntry)) return false;
   if (d.intakeLog !== undefined && !arrOf(d.intakeLog, isIntakeEntry)) return false;
   if (d.tr !== undefined && !isPlainObject(d.tr)) return false;
   if (d.expSettings !== undefined && !isPlainObject(d.expSettings)) return false;
+  return true;
+}
+
+// Fields shared across every cat, common to both v1 (top-level) and v2 (top-level too).
+function validateSharedShape(d) {
+  if (d.library !== undefined && !arrOf(d.library, isFoodEntry)) return false;
   if (d.fridgeDays !== undefined && typeof d.fridgeDays !== "number") return false;
   return true;
+}
+
+// v1: a flat blob — one cat's fields at the top level, alongside the shared ones.
+function validateV1(d) {
+  return validateCatShape(d) && validateSharedShape(d);
+}
+
+// v2: { v: 2, activeCatId?, cats: { [id]: <cat shape> }, library?, fridgeDays? }. At least
+// one cat is required — an empty `cats` map isn't a valid export.
+function validateV2(d) {
+  if (!isPlainObject(d.cats)) return false;
+  const ids = Object.keys(d.cats);
+  if (ids.length === 0) return false;
+  if (!ids.every((id) => validateCatShape(d.cats[id]))) return false;
+  if (d.activeCatId !== undefined && typeof d.activeCatId !== "string") return false;
+  return validateSharedShape(d);
+}
+
+export function validateImport(d) {
+  if (!isPlainObject(d)) return false;
+  return d.v === 2 ? validateV2(d) : validateV1(d);
 }

@@ -1,63 +1,173 @@
 import { createContext, useContext, useMemo, useState } from "react";
-import { num, r1, clamp } from "../lib/util.js";
+import { num, r1, uid, clamp } from "../lib/util.js";
 import { computeTargets, seedProfile, bcsToPct, pctToBcs, ageMonthsFromDob, effectiveAgeMonths } from "../lib/nutrition.js";
-import { makeRationSeed, makeStartSeed, makeLibrarySeed, toLibraryEntry, dedupeFoods, stripKind, canonicalFoodName, migrateLegacyFood, ensureBuiltins } from "../lib/foods.js";
+import {
+  makeRationSeed, makeStartSeed, makeLibrarySeed, toLibraryEntry, dedupeFoods, stripKind, canonicalFoodName,
+  migrateLegacyFood, ensureBuiltins, sumPct, blankFood, normalizePct, waterfall,
+} from "../lib/foods.js";
 import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure, WEIGH_SOURCES, DEFAULT_METHOD } from "../lib/expenditure.js";
 import { groupByDay, median } from "../lib/series.js";
 import { usePersistence, store, probeStorage } from "../lib/storage.js";
-import { useFoodList } from "../hooks/useFoodList.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
-import { useLog } from "../hooks/useLog.js";
-
-const defaultTr = () => ({ on: false, days: 7, timelineUnit: "g" });
-const defaultExpSettings = () => ({ pctPerWeek: 1, energyBasis: "formula", algo: "v3", unit: "kg", direction: "auto", lastMethod: "petScale" });
+import {
+  addCat as addCatPure, deleteCat as deleteCatPure, clearCatHistory as clearCatHistoryPure, switchCat as switchCatPure,
+  freshCatState, freshProfile, defaultTr, defaultExpSettings,
+} from "../lib/catStore.js";
+import { toV2, migrateV1 } from "../lib/migrate.js";
 
 // Clean up legacy food data: strip "(dry)"/"(wet)", snap macro-identical near-dupes to their
 // canonical built-in name, and retire the generic Tiki. Pure — used on load and on import.
 const cleanName = (f) => (f.name == null ? f : { ...f, name: stripKind(f.name) });
 const cleanFood = (f) => { const s = cleanName(f); return s.name == null ? s : migrateLegacyFood({ ...s, name: canonicalFoodName(s) }); };
 
+// A freshly-installed app shows one demo cat (Mithril) — the existing seed data, wrapped as
+// a cat. addCat()/deleteCat()'s replacement cat are deliberately NOT this: see freshCatState.
+const makeInitialCatsState = () => {
+  const id = uid();
+  return {
+    activeCatId: id,
+    cats: {
+      [id]: {
+        profile: seedProfile, ration: makeRationSeed(), start: makeStartSeed(),
+        weightLog: [], intakeLog: [], tr: defaultTr(), expSettings: defaultExpSettings(),
+      },
+    },
+  };
+};
+
+// Fill in a per-cat record from (possibly partial/imported) data, defaulting anything
+// missing and running the food cleanup on every food-shaped field.
+const sanitizeCat = (cat) => ({
+  profile: cat?.profile ?? freshProfile(),
+  ration: (cat?.ration || []).map(cleanFood),
+  start: (cat?.start || []).map(cleanFood),
+  weightLog: cat?.weightLog || [],
+  intakeLog: (cat?.intakeLog || []).map(cleanName),
+  tr: cat?.tr || defaultTr(),
+  expSettings: { ...defaultExpSettings(), ...(cat?.expSettings || {}) },
+});
+
+const catsFromV2 = (d) => {
+  const cats = {};
+  for (const [id, cat] of Object.entries(d.cats || {})) cats[id] = sanitizeCat(cat);
+  return cats;
+};
+
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
 // Owns every piece of persisted state and the values derived from it. Pages are pure views
 // over this. Persistence and semantics stay in their own modules; this just wires them.
+//
+// State is multi-cat: `catsState` holds { activeCatId, cats: { [id]: <per-cat state> } }.
+// Everything below (profile, ration/start, weightLog/intakeLog, tr, expSettings, and every
+// derived value) reads/writes the ACTIVE cat only — pages don't know cats exist, they just
+// see the same flattened `p`/`ration`/`weightLog`/etc. surface as before multi-cat.
+// Food library + fridgeDays are the two things genuinely shared across cats, so they stay
+// their own top-level state (unchanged from before multi-cat).
 export function AppProvider({ children }) {
-  const [p, setP] = useState(seedProfile);
-  const ration = useFoodList(makeRationSeed);
-  const start = useFoodList(makeStartSeed);
+  const [catsState, setCatsState] = useState(makeInitialCatsState);
   const library = useFoodLibrary(makeLibrarySeed);
-  const weightLog = useLog();
-  const intakeLog = useLog();
-  const [tr, setTr] = useState(defaultTr);
   const [fridgeDays, setFridgeDays] = useState(3);
-  const [expSettings, setExpSettingsRaw] = useState(defaultExpSettings);
   const [hydrated, setHydrated] = useState(false); // did we load real saved data (vs. seed defaults)?
   const [storageOk] = useState(probeStorage);
 
-  // Apply a saved/imported blob to state (with the food cleanup). Reused by load + import.
-  const applyData = (d) => {
-    if (!d || typeof d !== "object") return;
+  const activeCat = catsState.cats[catsState.activeCatId];
+  const updateActiveCat = (fn) =>
+    setCatsState((s) => ({ ...s, cats: { ...s.cats, [s.activeCatId]: fn(s.cats[s.activeCatId]) } }));
+
+  // Load: the stored blob is our own — always a whole snapshot (v1 legacy or v2). Migrate
+  // v1 → v2 (see lib/migrate.js) then adopt it wholesale.
+  const hydrate = (raw) => {
+    if (!raw || typeof raw !== "object") return;
     setHydrated(true);
-    if (d.profile) setP(d.profile);
-    if (d.ration) ration.setItems(d.ration.map(cleanFood));
-    if (d.start) start.setItems(d.start.map(cleanFood));
-    if (d.library) library.setFoods(dedupeFoods(ensureBuiltins(d.library.map(cleanFood)))); // merge dupes + pick up new built-ins
-    if (d.weightLog) weightLog.setItems(d.weightLog);
-    if (d.intakeLog) intakeLog.setItems(d.intakeLog.map(cleanName));
-    if (d.tr) setTr(d.tr);
+    const d = toV2(raw);
+    const cats = catsFromV2(d);
+    if (Object.keys(cats).length) {
+      const activeCatId = d.activeCatId && cats[d.activeCatId] ? d.activeCatId : Object.keys(cats)[0];
+      setCatsState({ activeCatId, cats });
+    }
+    if (d.library) library.setFoods(dedupeFoods(ensureBuiltins(d.library.map(cleanFood))));
     if (typeof d.fridgeDays === "number") setFridgeDays(d.fridgeDays);
-    if (d.expSettings) setExpSettingsRaw({ ...defaultExpSettings(), ...d.expSettings });
   };
 
-  const persistData = { profile: p, ration: ration.items, start: start.items, library: library.foods,
-    weightLog: weightLog.items, intakeLog: intakeLog.items, tr, fridgeDays, expSettings };
-  const loaded = usePersistence(persistData, applyData);
+  // Import (user-picked file, Settings → Data): a v2 file is a full backup, so it replaces
+  // every cat. A v1 file (a legacy single-cat export, or one made before this device had
+  // other cats) is adopted as one NEW cat alongside whatever's already here, rather than
+  // clobbering existing cats — "migrate on accept". Shared fields (library/fridgeDays) only
+  // change if the file actually has them, so an old/partial file can't blank out the library.
+  const importData = (raw) => {
+    if (!raw || typeof raw !== "object") return;
+    setHydrated(true);
+    if (raw.v === 2) {
+      const cats = catsFromV2(raw);
+      if (Object.keys(cats).length) {
+        const activeCatId = raw.activeCatId && cats[raw.activeCatId] ? raw.activeCatId : Object.keys(cats)[0];
+        setCatsState({ activeCatId, cats });
+      }
+    } else {
+      const migrated = migrateV1(raw);
+      const newId = migrated.activeCatId;
+      const rawCat = migrated.cats[newId];
+      if (Object.keys(rawCat).length) { // a wholly-empty import has nothing to adopt
+        const cat = sanitizeCat(rawCat);
+        setCatsState((s) => ({ activeCatId: newId, cats: { ...s.cats, [newId]: cat } }));
+      }
+    }
+    if (raw.library) library.setFoods(dedupeFoods(ensureBuiltins(raw.library.map(cleanFood))));
+    if (typeof raw.fridgeDays === "number") setFridgeDays(raw.fridgeDays);
+  };
+
+  const persistData = { v: 2, activeCatId: catsState.activeCatId, cats: catsState.cats, library: library.foods, fridgeDays };
+  const loaded = usePersistence(persistData, hydrate);
   const firstRun = loaded && !hydrated; // showing seed defaults, no saved data yet
 
   // Foods enter the library only on an explicit save click (see saveFood) — never
   // automatically, so typing a food doesn't silently accumulate library entries.
   const saveFood = (f) => library.upsert(toLibraryEntry(f));
+
+  const p = activeCat.profile;
+  const setP = (updater) => updateActiveCat((cat) => ({ ...cat, profile: typeof updater === "function" ? updater(cat.profile) : updater }));
+
+  // Editable food list (the ration, the start blend) scoped to the active cat — same
+  // {items, setItems, sum, setField, add, remove, normalize, slide, patch} shape the pages
+  // already expect (previously from useFoodList).
+  const makeListView = (field) => {
+    const items = activeCat[field];
+    const setItems = (updater) => updateActiveCat((cat) => ({ ...cat, [field]: typeof updater === "function" ? updater(cat[field]) : updater }));
+    return {
+      items, setItems,
+      sum: sumPct(items),
+      setField: (id, k, v) => setItems((fs) => fs.map((f) => (f.id === id ? { ...f, [k]: v } : f))),
+      add: () => setItems((fs) => [...fs, blankFood()]),
+      remove: (id) => setItems((fs) => fs.filter((f) => f.id !== id)),
+      normalize: () => setItems((fs) => normalizePct(fs)),
+      slide: (id, raw) => setItems((fs) => waterfall(fs, id, raw)),
+      patch: (id, obj) => setItems((fs) => fs.map((f) => (f.id === id ? { ...f, ...obj } : f))),
+    };
+  };
+  const ration = makeListView("ration");
+  const start = makeListView("start");
+
+  // Generic dated-entry log (weight log, intake log) scoped to the active cat — same
+  // {items, setItems, add, edit, remove} shape as before (previously from useLog).
+  const makeLogView = (field) => {
+    const items = activeCat[field];
+    const setItems = (updater) => updateActiveCat((cat) => ({ ...cat, [field]: typeof updater === "function" ? updater(cat[field]) : updater }));
+    return {
+      items, setItems,
+      add: (entry) => setItems((xs) => [...xs, { id: uid(), ...entry }]),
+      edit: (id, patch) => setItems((xs) => xs.map((e) => (e.id === id ? { ...e, ...patch } : e))),
+      remove: (id) => setItems((xs) => xs.filter((e) => e.id !== id)),
+    };
+  };
+  const weightLog = makeLogView("weightLog");
+  const intakeLog = makeLogView("intakeLog");
+
+  const tr = activeCat.tr;
+  const setTr = (updater) => updateActiveCat((cat) => ({ ...cat, tr: typeof updater === "function" ? updater(cat.tr) : updater }));
+  const expSettings = activeCat.expSettings;
+  const setExpSettings = (patch) => updateActiveCat((cat) => ({ ...cat, expSettings: { ...cat.expSettings, ...patch } }));
 
   // Permanent vs. logged state. Age derives from date of birth (so it never goes stale);
   // with no dob to derive it from, the cat is treated as an adult (never a fabricated
@@ -92,22 +202,47 @@ export function AppProvider({ children }) {
   const setFactor = (k, v) => setP((s) => ({ ...s, factors: { ...s.factors, [k]: v } }));
   const setBcs = (v) => setP((s) => ({ ...s, bcs: v, pctOver: bcsToPct(v), bcAsOf: today }));
   const setPct = (v) => { const cv = clamp(num(v), -60, 100); setP((s) => ({ ...s, pctOver: cv, bcs: pctToBcs(cv), bcAsOf: today })); }; // clamp: a wild % → absurd ideal weight → overfeed
-  const setExpSettings = (patch) => setExpSettingsRaw((s) => ({ ...s, ...patch }));
-  const reset = () => {
+
+  // One row per cat for the Settings "Cats" list / header switcher: id, display name (or
+  // blank — callers show "unnamed cat"), a formatted age (or null — "age unknown"), and how
+  // many weigh-ins it has logged.
+  const catsSummary = Object.entries(catsState.cats).map(([id, cat]) => {
+    const months = ageMonthsFromDob(cat.profile?.dob, today);
+    const unit = cat.profile?.ageUnit || "months";
+    return {
+      id,
+      name: (cat.profile?.name || "").trim(),
+      ageDisplay: months == null ? null : unit === "years" ? `${r1(months / 12)} yr` : `${r1(months)} mo`,
+      weighIns: (cat.weightLog || []).length,
+      active: id === catsState.activeCatId,
+    };
+  });
+  const switchCat = (id) => setCatsState((s) => switchCatPure(s, id));
+  const addCat = () => setCatsState((s) => addCatPure(s));
+  const deleteCat = (id) => setCatsState((s) => deleteCatPure(s, id));
+  const clearCatHistory = (id) => setCatsState((s) => clearCatHistoryPure(s, id));
+
+  // Global "erase all" — wipes every cat, the saved-food library, and fridgeDays back to a
+  // single fresh blank cat + the built-in food list. Not the seed demo cat: a user who's
+  // deliberately erasing everything on a deployed app shouldn't have a stranger's example
+  // cat (Mithril) resurface.
+  const eraseAll = () => {
     store.clear();
-    setP(seedProfile); ration.reset(); start.reset(); library.reset();
-    weightLog.reset(); intakeLog.reset();
-    setTr(defaultTr()); setFridgeDays(3); setExpSettingsRaw(defaultExpSettings());
+    const id = uid();
+    setCatsState({ activeCatId: id, cats: { [id]: freshCatState() } });
+    library.reset();
+    setFridgeDays(3);
   };
 
   const value = {
-    loaded, firstRun, storageOk, p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct, reset,
+    loaded, firstRun, storageOk, p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct,
     today, currentWeight, logWeight,
     ration, start, library, weightLog, intakeLog, saveFood,
     tr, setTr, fridgeDays, setFridgeDays, expSettings, setExpSettings,
     t, expenditure,
+    activeCatId: catsState.activeCatId, catsSummary, switchCat, addCat, deleteCat, clearCatHistory, eraseAll,
     exportData: () => JSON.stringify(persistData, null, 2),
-    importData: applyData,
+    importData,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

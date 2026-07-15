@@ -48,3 +48,57 @@ describe("validateImport rejects malformed shapes", () => {
     expect(validateImport({ ...validExport(), intakeLog: [{ kcal: 250 }] })).toBe(false); // no date
   });
 });
+
+const validV2Export = () => ({
+  v: 2,
+  activeCatId: "cat-1",
+  cats: {
+    "cat-1": {
+      profile: { name: "Mithril", dob: "2025-09-13", weightKg: 4.38, goal: "gentle", factors: {} },
+      ration: [{ id: "a", name: "Food A", mode: "perKg", kcalPerKg: 4000, pct: 100 }],
+      start: [],
+      weightLog: [{ id: "c", date: "2026-01-01", kg: 4.4, method: "petScale", source: "manual" }],
+      intakeLog: [{ id: "d", date: "2026-01-01", kcal: 250, grams: 60, name: "Food A" }],
+      tr: { on: false, days: 7, timelineUnit: "g" },
+      expSettings: { unit: "kg" },
+    },
+    "cat-2": { profile: { name: "Second Cat" } },
+  },
+  library: [{ id: "b", name: "Food B", mode: "perUnit", kcalPerUnit: 60, gramsPerUnit: 79 }],
+  fridgeDays: 3,
+});
+
+describe("validateImport accepts a well-formed v2 (multi-cat) export", () => {
+  it("accepts a full v2 export with multiple cats", () => {
+    expect(validateImport(validV2Export())).toBe(true);
+  });
+  it("accepts a v2 export with a single, mostly-empty cat", () => {
+    expect(validateImport({ v: 2, cats: { x: {} } })).toBe(true);
+  });
+  it("accepts a v2 export missing the optional activeCatId/library/fridgeDays", () => {
+    const { activeCatId, library, fridgeDays, ...rest } = validV2Export();
+    expect(validateImport(rest)).toBe(true);
+  });
+});
+
+describe("validateImport rejects malformed v2 shapes", () => {
+  it("rejects a v2 blob with no cats field, or cats not an object", () => {
+    expect(validateImport({ v: 2 })).toBe(false);
+    expect(validateImport({ v: 2, cats: [] })).toBe(false);
+    expect(validateImport({ v: 2, cats: "nope" })).toBe(false);
+  });
+  it("rejects a v2 blob with an empty cats map", () => {
+    expect(validateImport({ v: 2, cats: {} })).toBe(false);
+  });
+  it("rejects a v2 blob with a malformed cat inside cats", () => {
+    expect(validateImport({ ...validV2Export(), cats: { "cat-1": { ration: [{ pct: 100 }] } } })).toBe(false);
+    expect(validateImport({ ...validV2Export(), cats: { "cat-1": { weightLog: "oops" } } })).toBe(false);
+  });
+  it("rejects a non-string activeCatId", () => {
+    expect(validateImport({ ...validV2Export(), activeCatId: 42 })).toBe(false);
+  });
+  it("rejects malformed shared fields (library/fridgeDays) same as v1", () => {
+    expect(validateImport({ ...validV2Export(), library: { name: "Food A" } })).toBe(false);
+    expect(validateImport({ ...validV2Export(), fridgeDays: "3" })).toBe(false);
+  });
+});
