@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { RER, computeTargets, bcsToPct, pctToBcs, defaultFactors } from "./nutrition.js";
+import { RER, computeTargets, bcsToPct, pctToBcs, defaultFactors, ageMonthsFromDob, effectiveAgeMonths, ADULT_DEFAULT_AGE_MONTHS } from "./nutrition.js";
 
 // A minimal profile; override per test.
 const profile = (over = {}) => ({
@@ -56,6 +56,63 @@ describe("BCS <-> % round-trips", () => {
   it("clamps out-of-range percentages into 1-9", () => {
     expect(pctToBcs(200)).toBe(9);
     expect(pctToBcs(-200)).toBe(1);
+  });
+});
+
+describe("ageMonthsFromDob (age derives from birthday, so it never goes stale)", () => {
+  it("counts months between dob and the as-of date", () => {
+    // exactly one (average) month later
+    expect(ageMonthsFromDob("2026-01-01", "2026-01-31")).toBeCloseTo(30 / 30.4375, 3);
+    // ~10 months
+    expect(ageMonthsFromDob("2025-09-12", "2026-07-12")).toBeCloseTo(303 / 30.4375, 2);
+  });
+  it("advances as the as-of date advances (same dob, later day → older)", () => {
+    const a = ageMonthsFromDob("2025-01-01", "2026-01-01");
+    const b = ageMonthsFromDob("2025-01-01", "2026-07-01");
+    expect(b).toBeGreaterThan(a);
+  });
+  it("returns null for missing, invalid, or future dob so callers fall back to a stored age", () => {
+    expect(ageMonthsFromDob("", "2026-07-12")).toBeNull();
+    expect(ageMonthsFromDob("2026-07-12", "")).toBeNull();
+    expect(ageMonthsFromDob("not-a-date", "2026-07-12")).toBeNull();
+    expect(ageMonthsFromDob("2027-01-01", "2026-07-12")).toBeNull(); // dob in the future
+  });
+});
+
+describe("effectiveAgeMonths (a missing dob is never a fabricated newborn)", () => {
+  it("returns the real age when dob is set", () => {
+    expect(effectiveAgeMonths("2025-09-12", "2026-07-12")).toBeCloseTo(303 / 30.4375, 2);
+  });
+  it("returns the adult default when dob is missing, invalid, or future", () => {
+    expect(effectiveAgeMonths("", "2026-07-12")).toBe(ADULT_DEFAULT_AGE_MONTHS);
+    expect(effectiveAgeMonths(undefined, "2026-07-12")).toBe(ADULT_DEFAULT_AGE_MONTHS);
+    expect(effectiveAgeMonths("2027-01-01", "2026-07-12")).toBe(ADULT_DEFAULT_AGE_MONTHS); // future dob
+  });
+  it("the adult default is well clear of the kitten cutoff (12 months)", () => {
+    expect(ADULT_DEFAULT_AGE_MONTHS).toBeGreaterThanOrEqual(12);
+  });
+});
+
+describe("computeTargets with a missing dob: the silent-overfeed regression", () => {
+  // Before the fix, a missing dob fell through to age 0 -> "young kitten" stage,
+  // the 2.5x kitten-peak factor, and "maintain" dropped from the goal list (silently
+  // falling back to "grow", ~2x overfeeding an adult cat). This locks in the fix:
+  // missing dob must resolve to an adult stage/factor with "maintain" preserved.
+  it("missing dob -> adult stage, adult MER factor, maintain available and kept as the goal", () => {
+    const age = effectiveAgeMonths(undefined, "2026-07-12");
+    const t = computeTargets(profile({ ageMonths: age, goal: "maintain" }));
+    expect(t.stage).toBe("adult");
+    expect(t.growthFactor).toBeCloseTo(defaultFactors.neutered, 6); // no kitten taper
+    expect(t.goalId).toBe("maintain"); // not silently dropped to "grow"
+    expect(t.target).toBeCloseTo(t.rerCur * defaultFactors.neutered, 6);
+  });
+});
+
+describe("computeTargets runs on the weight it's handed (current weight from the log)", () => {
+  it("uses the passed-in weightKg, not any other source", () => {
+    const t = computeTargets(profile({ weightKg: 6 }));
+    expect(t.w).toBe(6);
+    expect(t.rerCur).toBeCloseTo(RER(6), 6);
   });
 });
 

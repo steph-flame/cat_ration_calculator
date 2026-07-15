@@ -1,8 +1,9 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import { num, r1, clamp } from "../lib/util.js";
-import { computeTargets, seedProfile, bcsToPct, pctToBcs } from "../lib/nutrition.js";
+import { computeTargets, seedProfile, bcsToPct, pctToBcs, ageMonthsFromDob, effectiveAgeMonths } from "../lib/nutrition.js";
 import { makeRationSeed, makeStartSeed, makeLibrarySeed, toLibraryEntry, dedupeFoods, stripKind, canonicalFoodName, migrateLegacyFood, ensureBuiltins } from "../lib/foods.js";
-import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure } from "../lib/expenditure.js";
+import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure, WEIGH_SOURCES, DEFAULT_METHOD } from "../lib/expenditure.js";
+import { groupByDay, median } from "../lib/series.js";
 import { usePersistence, store, probeStorage } from "../lib/storage.js";
 import { useFoodList } from "../hooks/useFoodList.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
@@ -58,7 +59,23 @@ export function AppProvider({ children }) {
   // automatically, so typing a food doesn't silently accumulate library entries.
   const saveFood = (f) => library.upsert(toLibraryEntry(f));
 
-  const t = useMemo(() => computeTargets(p), [p]);
+  // Permanent vs. logged state. Age derives from date of birth (so it never goes stale);
+  // with no dob to derive it from, the cat is treated as an adult (never a fabricated
+  // newborn — see effectiveAgeMonths) and dobMissing tells the UI to prompt for it instead
+  // of showing a made-up age. The current weight the feeding math runs on is the latest
+  // weigh-in — not a hand-typed number that can silently disagree with the log — falling
+  // back to the seeded profile weight before the first weigh-in.
+  const today = new Date().toISOString().slice(0, 10);
+  const dobMissing = ageMonthsFromDob(p.dob, today) == null;
+  const effAgeMonths = effectiveAgeMonths(p.dob, today);
+  const weightDays = groupByDay(weightLog.items); // newest day first
+  const currentWeight = weightDays.length
+    ? { kg: median(weightDays[0].items.map((e) => num(e.kg))), date: weightDays[0].date, fromLog: true }
+    : { kg: num(p.weightKg), date: null, fromLog: false };
+  const logWeight = ({ kg, method }) =>
+    weightLog.add({ date: today, kg, method: method || expSettings.lastMethod || DEFAULT_METHOD, source: WEIGH_SOURCES.manual });
+
+  const t = useMemo(() => computeTargets({ ...p, ageMonths: effAgeMonths, weightKg: currentWeight.kg }), [p, effAgeMonths, currentWeight.kg]);
   const expenditure = useMemo(() => {
     const w = weightLog.items.map((e) => ({ date: e.date, value: e.kg, method: e.method }));
     const i = intakeLog.items.map((e) => ({ date: e.date, value: e.kcal }));
@@ -70,12 +87,11 @@ export function AppProvider({ children }) {
 
   // Profile helpers (unchanged semantics, just centralized).
   const ageUnit = p.ageUnit || "months";
-  const ageDisplay = ageUnit === "years" ? r1(num(p.ageMonths) / 12) : num(p.ageMonths);
+  const ageDisplay = dobMissing ? null : ageUnit === "years" ? r1(effAgeMonths / 12) : r1(effAgeMonths); // never a fabricated age
   const set = (k, v) => setP((s) => ({ ...s, [k]: v }));
   const setFactor = (k, v) => setP((s) => ({ ...s, factors: { ...s.factors, [k]: v } }));
-  const setAgeDisplay = (v) => set("ageMonths", ageUnit === "years" ? num(v) * 12 : num(v));
-  const setBcs = (v) => setP((s) => ({ ...s, bcs: v, pctOver: bcsToPct(v) }));
-  const setPct = (v) => { const cv = clamp(num(v), -60, 100); setP((s) => ({ ...s, pctOver: cv, bcs: pctToBcs(cv) })); }; // clamp: a wild % → absurd ideal weight → overfeed
+  const setBcs = (v) => setP((s) => ({ ...s, bcs: v, pctOver: bcsToPct(v), bcAsOf: today }));
+  const setPct = (v) => { const cv = clamp(num(v), -60, 100); setP((s) => ({ ...s, pctOver: cv, bcs: pctToBcs(cv), bcAsOf: today })); }; // clamp: a wild % → absurd ideal weight → overfeed
   const setExpSettings = (patch) => setExpSettingsRaw((s) => ({ ...s, ...patch }));
   const reset = () => {
     store.clear();
@@ -85,7 +101,8 @@ export function AppProvider({ children }) {
   };
 
   const value = {
-    loaded, firstRun, storageOk, p, set, setFactor, ageUnit, ageDisplay, setAgeDisplay, setBcs, setPct, reset,
+    loaded, firstRun, storageOk, p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct, reset,
+    today, currentWeight, logWeight,
     ration, start, library, weightLog, intakeLog, saveFood,
     tr, setTr, fridgeDays, setFridgeDays, expSettings, setExpSettings,
     t, expenditure,

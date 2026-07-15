@@ -12,18 +12,21 @@ import { Field, NumInput, Toggle, Row, RefRow, Note } from "../components/primit
 
 export default function RationPlanner() {
   const {
-    p, set, setFactor, ageUnit, ageDisplay, setAgeDisplay, setBcs, setPct, reset,
+    p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct, reset,
+    today, currentWeight, logWeight,
     t, ration, start, library, saveFood, tr, setTr, fridgeDays, setFridgeDays,
     expenditure, expSettings, setExpSettings,
   } = useApp();
   const savedNames = new Set(library.foods.map((x) => x.name.trim().toLowerCase()));
   const [showMath, setShowMath] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [wInput, setWInput] = useState("");
 
   const { age, w: wkg, goalId } = t;
   const unit = expSettings.unit || "kg";
   const wLbl = weightLabel(unit);
   const showW = (kg) => `${r1(toDisplayWeight(kg, unit))} ${wLbl}`;
+  const submitWeight = () => { if (num(wInput) > 0) { logWeight({ kg: fromDisplayWeight(num(wInput), unit) }); setWInput(""); } };
 
   // Energy basis: the vet formula (default) or the measured expenditure. When "measured" is
   // selected and there's enough data, the working target comes from the estimate — and if the
@@ -41,7 +44,7 @@ export default function RationPlanner() {
   }[goalId];
 
   const warnings = [];
-  if (age > 0 && age < 12 && goalId === "loss") warnings.push(`Still growing (${r0(age)} mo). Active fat-loss on a developing cat isn't usually advised — Gentle trim lets added frame dilute the fat instead.`);
+  if (t.stage !== "adult" && goalId === "loss") warnings.push(`Still growing (${r0(age)} mo). Active fat-loss on a developing cat isn't usually advised — Gentle trim lets added frame dilute the fat instead.`);
   if (t.pctOver <= 0 && goalId === "loss") warnings.push(`At or below ideal weight, so a weight-loss target doesn't apply — it would aim above the current weight. Choose Maintain instead.`);
   if (t.pctOver < 0 && goalId === "gentle") warnings.push(`Under ideal weight — a deficit may not be wanted here. Consider Maintain or Support growth.`);
   if (t.pctOver >= 0 && goalId === "gain") warnings.push(`At or above ideal weight — a weight-gain target would add unwanted weight. Choose Maintain or a loss plan.`);
@@ -99,18 +102,48 @@ export default function RationPlanner() {
             <h2 className="font-medium">The cat</h2>
             <input value={p.name} onChange={(e) => set("name", e.target.value)} style={{ color: C.spruce }} className="text-right text-sm font-mono bg-transparent outline-none w-32" aria-label="name" />
           </div>
+          {/* permanent attributes — set once */}
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Current weight" suffix={<button onClick={() => setExpSettings({ unit: unit === "lb" ? "kg" : "lb" })} title="Switch weight unit" style={{ color: C.spruce }} className="font-mono underline decoration-dotted underline-offset-2">{wLbl}</button>}>
-              <NumInput value={unit === "lb" ? +toDisplayWeight(num(p.weightKg), unit).toFixed(2) : p.weightKg} onChange={(v) => set("weightKg", v === "" ? "" : fromDisplayWeight(num(v), unit))} step={unit === "lb" ? "0.05" : "0.01"} />
+            <Field label="Date of birth">
+              <input type="date" value={p.dob || ""} max={today} onChange={(e) => set("dob", e.target.value)} className="w-full bg-transparent outline-none font-mono text-sm tabular-nums" style={{ color: C.ink }} aria-label="Date of birth" />
             </Field>
-            <Field label="Age" suffix={<button onClick={() => set("ageUnit", ageUnit === "years" ? "months" : "years")} title="Switch unit" style={{ color: C.spruce }} className="font-mono underline decoration-dotted underline-offset-2">{ageUnit}</button>}>
-              <NumInput value={ageDisplay} onChange={setAgeDisplay} step={ageUnit === "years" ? "0.1" : "1"} />
-            </Field>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span style={{ color: C.sub }} className="text-xs">Age</span>
+                <button onClick={() => set("ageUnit", ageUnit === "years" ? "months" : "years")} title="Switch unit" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2">{ageUnit}</button>
+              </div>
+              <div style={{ borderColor: C.line }} className="flex items-baseline border rounded-lg px-2.5 py-1.5 bg-white">
+                {dobMissing ? (
+                  <span style={{ color: C.warn }} className="text-xs font-mono">set date of birth ↑ — age unknown</span>
+                ) : (
+                  <><span className="font-mono text-sm tabular-nums" style={{ color: C.ink }}>{ageDisplay}</span><span style={{ color: C.faint }} className="text-xs font-mono ml-1 shrink-0">{ageUnit === "years" ? "yr" : "mo"} · from birthday</span></>
+                )}
+              </div>
+            </div>
           </div>
           <div className="mt-3 flex items-center gap-2"><span style={{ color: C.sub }} className="text-xs w-28">Spayed / neutered</span><Toggle value={p.neutered} onChange={(v) => set("neutered", v)} /></div>
+
+          {/* current state — read from the weight log */}
+          <div style={{ borderColor: C.line }} className="mt-4 border-t pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <span style={{ color: C.sub }} className="text-xs">Current weight</span>
+              <button onClick={() => setExpSettings({ unit: unit === "lb" ? "kg" : "lb" })} title="Switch weight unit" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2">{wLbl}</button>
+            </div>
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-2xl font-mono font-semibold tabular-nums" style={{ color: C.ink }}>{showW(currentWeight.kg)}</span>
+              <span style={{ color: currentWeight.fromLog ? C.faint : C.warn }} className="text-xs font-mono">{currentWeight.fromLog ? `latest weigh-in · ${currentWeight.date}` : "starting estimate — no weigh-ins yet, log one ↓"}</span>
+            </div>
+            <div className="mt-2 flex items-end gap-2">
+              <div className="w-28"><Field label="New weigh-in" suffix={wLbl}><NumInput value={wInput} onChange={setWInput} step={unit === "lb" ? "0.05" : "0.01"} /></Field></div>
+              <button onClick={submitWeight} disabled={!(num(wInput) > 0)} title="Log this weigh-in" aria-label="Log this weigh-in" style={{ background: num(wInput) > 0 ? C.spruce : C.line }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
+              <a href="#/log" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2 mb-2 ml-auto">full log →</a>
+            </div>
+          </div>
+
+          {/* body condition */}
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
-              <span style={{ color: C.sub }} className="text-xs">Body condition</span>
+              <span style={{ color: C.sub }} className="text-xs">Body condition{p.bcAsOf && <span style={{ color: C.faint }}> · assessed {p.bcAsOf}</span>}</span>
               <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
                 {["pct", "bcs"].map((m) => (<button key={m} onClick={() => set("bcMode", m)} aria-pressed={p.bcMode === m} style={{ background: p.bcMode === m ? C.spruce : "transparent", color: p.bcMode === m ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{m === "pct" ? "%" : "BCS"}</button>))}
               </div>

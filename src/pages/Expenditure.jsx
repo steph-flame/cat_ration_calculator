@@ -15,7 +15,7 @@ export default function Expenditure() {
   const { p, t, expenditure, intakeLog, expSettings, setExpSettings } = useApp();
   const e = expenditure;
   const unit = expSettings.unit || "kg";
-  const kitten = t.age > 0 && t.age < 12;
+  const kitten = t.stage !== "adult"; // stage, not a raw age check — catches a newborn (dob = today, age 0) too
   const algoName = { v3: "unobserved-components", v2: "Kalman filter", v1: "EWMA + regression" }[expSettings.algo];
   const wLbl = weightLabel(unit);
   const showW = (kg, d = 1) => `${(d === 1 ? r1 : r0)(toDisplayWeight(kg, unit))} ${wLbl}`;

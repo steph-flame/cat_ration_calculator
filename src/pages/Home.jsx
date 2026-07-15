@@ -4,6 +4,7 @@ import { useApp } from "../state/AppState.jsx";
 import { r0, r1 } from "../lib/util.js";
 import { toDisplayWeight, weightLabel } from "../lib/units.js";
 import { resolveTarget } from "../lib/targeting.js";
+import { validateImport } from "../lib/validate.js";
 
 // Landing page: pick a tool. Shows a one-line status from each so the home screen is useful,
 // not just a menu.
@@ -21,8 +22,11 @@ export default function Home() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try { importData(JSON.parse(reader.result)); }
-      catch { window.alert("Couldn't read that file — it doesn't look like a Cat Feeding export."); }
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!validateImport(parsed)) throw new Error("malformed export shape");
+        importData(parsed);
+      } catch { window.alert("Couldn't read that file — it doesn't look like a Cat Feeding export."); }
     };
     reader.readAsText(file);
   };

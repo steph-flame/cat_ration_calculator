@@ -36,7 +36,7 @@ function Router() {
         <Banner tone="warn">This browser isn't letting the app save (private mode?). Changes won't persist — use Export on the home screen to keep your data.</Banner>
       )}
       {firstRun && !introClosed && (
-        <Banner onClose={() => setIntroClosed(true)}>Showing example data (a sample cat). Edit the cat's weight and name on the ration planner to make it yours — or use "erase all" to start fresh.</Banner>
+        <Banner onClose={() => setIntroClosed(true)}>Showing example data (a sample cat). Set the cat's name, date of birth, and a weigh-in on the ration planner to make it yours — or use "erase all" to start fresh.</Banner>
       )}
       <Page />
     </>

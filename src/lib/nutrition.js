@@ -18,6 +18,26 @@ export const RER = (kg) => 70 * Math.pow(kg, 0.75);
 export const bcsToPct = (bcs) => ((Number.isFinite(bcs) ? bcs : 5) - 5) * 10; // default to 5 (ideal) if unset
 export const pctToBcs = (pct) => Math.max(1, Math.min(9, Math.round(5 + num(pct) / 10)));
 
+// Age in months from a date of birth, evaluated as of `asOf` (both ISO "YYYY-MM-DD").
+// Returns null for missing/invalid/future dates so callers can fall back to a stored age.
+// This is what keeps a kitten's age from silently going stale: it's derived, not typed once.
+export function ageMonthsFromDob(dob, asOf) {
+  if (!dob || !asOf) return null;
+  const b = Date.parse(`${dob}T00:00:00Z`), a = Date.parse(`${asOf}T00:00:00Z`);
+  if (Number.isNaN(b) || Number.isNaN(a) || a < b) return null;
+  return (a - b) / 86400000 / 30.4375; // days → months (average month length)
+}
+
+// A comfortably-adult age to feed computeTargets when there's no dob to derive one from.
+// Never 0 — age 0 reads as a newborn (kitten-peak factor, "maintain" dropped from the goal
+// list), which silently doubled the recommended feed for an adult cat with an unset dob.
+export const ADULT_DEFAULT_AGE_MONTHS = 24;
+
+// Age in months to actually feed into computeTargets: the real age when dob is set, else
+// the adult default above. Pair with ageMonthsFromDob(dob, asOf) == null to know whether
+// the value is real or defaulted (e.g. to prompt for the birthday instead of showing it).
+export const effectiveAgeMonths = (dob, asOf) => ageMonthsFromDob(dob, asOf) ?? ADULT_DEFAULT_AGE_MONTHS;
+
 // The goal options offered depend on life stage: kittens can't "maintain", etc.
 export function goalsForAge(age) {
   const custom = { id: "custom", label: "Custom target", hint: "set kcal directly" };
@@ -71,7 +91,7 @@ export function computeTargets(p) {
 export const defaultFactors = { neutered: 1.2, intact: 1.4, kittenPeak: 2.5, moderation: 1.0, loss: 1.0, gain: 1.6 };
 
 export const seedProfile = {
-  name: "Mithril", weightKg: 4.38, ageMonths: 10, ageUnit: "months",
-  neutered: true, bcMode: "pct", bcs: 7, pctOver: 20, goal: "gentle",
+  name: "Mithril", dob: "2025-09-13", weightKg: 4.38, ageUnit: "months",
+  neutered: true, bcMode: "pct", bcs: 7, pctOver: 20, bcAsOf: null, goal: "gentle",
   customTarget: "", gentleBasis: "current", factors: { ...defaultFactors },
 };
