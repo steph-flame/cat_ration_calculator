@@ -35,7 +35,7 @@ function Header({ catsSummary, activeCatId, switchCat }) {
 }
 
 function Banner({ children, tone, onClose }) {
-  const bg = tone === "warn" ? C.amberSoft : C.spruceSoft;
+  const bg = tone === "warn" ? C.warnSoft : C.spruceSoft;
   const fg = tone === "warn" ? C.warn : C.spruce;
   return (
     <div style={{ background: bg, color: fg }} className="w-full text-xs">

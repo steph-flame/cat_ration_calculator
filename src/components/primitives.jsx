@@ -58,7 +58,7 @@ export function RefRow({ label, val, on, note }) {
 }
 
 export function Note({ children, tone }) {
-  const bg = tone === "warn" ? C.amberSoft : C.spruceSoft;
+  const bg = tone === "warn" ? C.warnSoft : C.spruceSoft;
   const fg = tone === "warn" ? C.warn : C.spruce;
   return (
     <div style={{ background: bg, color: fg }} className="mt-3 rounded-xl px-3 py-2 text-xs leading-snug flex gap-2">

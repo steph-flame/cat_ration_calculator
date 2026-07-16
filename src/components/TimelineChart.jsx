@@ -168,12 +168,15 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
               {gridAxis(bTicks, bY, isRate ? "%/wk" : "kcal", bTop)}
               {isRate && (
                 <g clipPath="url(#bClip)">
-                  <rect x={px0} width={px1 - px0} y={bY(-RATE.min)} height={Math.max(0, bY(-RATE.max) - bY(-RATE.min))} fill={CHART.expenditure} opacity="0.14" />
-                  <rect x={px0} width={px1 - px0} y={bY(RATE.max)} height={Math.max(0, bY(RATE.min) - bY(RATE.max))} fill={CHART.expenditure} opacity="0.14" />
+                  {/* safe-rate zone: C.ok specifically (not CHART.expenditure) — this is a
+                      safe-state indicator, not the trend series, and must stay green even in
+                      skins where data1/second diverge from ok. */}
+                  <rect x={px0} width={px1 - px0} y={bY(-RATE.min)} height={Math.max(0, bY(-RATE.max) - bY(-RATE.min))} fill={C.ok} opacity="0.14" />
+                  <rect x={px0} width={px1 - px0} y={bY(RATE.max)} height={Math.max(0, bY(RATE.min) - bY(RATE.max))} fill={C.ok} opacity="0.14" />
                   {[-RATE.min, -RATE.max, RATE.min, RATE.max].map((v) => (
-                    <line key={v} x1={px0} x2={px1} y1={bY(v)} y2={bY(v)} stroke={CHART.expenditure} strokeWidth="1" strokeDasharray="2 3" opacity="0.55" />
+                    <line key={v} x1={px0} x2={px1} y1={bY(v)} y2={bY(v)} stroke={C.ok} strokeWidth="1" strokeDasharray="2 3" opacity="0.55" />
                   ))}
-                  <text x={px1 - 2} y={bY(-RATE.max) - 3} textAnchor="end" fontSize={8 * fs} fontFamily="monospace" fill={CHART.expenditure}>safe {RATE.min}–{RATE.max}%/wk</text>
+                  <text x={px1 - 2} y={bY(-RATE.max) - 3} textAnchor="end" fontSize={8 * fs} fontFamily="monospace" fill={C.ok}>safe {RATE.min}–{RATE.max}%/wk</text>
                 </g>
               )}
               <g clipPath="url(#bClip)">
@@ -225,7 +228,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
         <LegendChip color={CHART.intake} label="calories in" />
         {hasExp && <LegendChip color={CHART.expenditure} label="est. expenditure" band />}
         {showAnalysis && <LegendChip color={C.ink} label={isRate ? "weight-change rate" : "balance (in − burns)"} />}
-        {showAnalysis && isRate && <LegendChip color={CHART.expenditure} label={`safe ${RATE.min}–${RATE.max}%/wk`} band />}
+        {showAnalysis && isRate && <LegendChip color={C.ok} label={`safe ${RATE.min}–${RATE.max}%/wk`} band />}
       </div>
 
       {/* screen-reader / no-pointer data fallback for the SVG */}

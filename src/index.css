@@ -11,13 +11,17 @@ body,
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
+  /* Companion voice: a rounded system font where available, falling back gracefully. */
+  font-family: ui-rounded, -apple-system, "SF Pro Rounded", "Segoe UI", system-ui,
+    Roboto, Helvetica, Arial, sans-serif;
+  background: var(--ground);
+  color: var(--ink);
 }
 
 /* Keyboard focus ring for every interactive element — many inputs/buttons set
    `outline-none`, so use box-shadow (which those utilities don't touch). Pointer
-   clicks stay clean via :focus-visible. */
+   clicks stay clean via :focus-visible. Colors come from the active skin's tokens so the
+   ring never clashes with a switched palette. */
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -25,7 +29,7 @@ select:focus-visible,
 [role="switch"]:focus-visible,
 [role="button"]:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #f6f7f4, 0 0 0 4px #3e5c50;
+  box-shadow: 0 0 0 2px var(--ground), 0 0 0 4px var(--accent);
   border-radius: 6px;
 }
 
