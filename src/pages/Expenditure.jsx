@@ -186,7 +186,7 @@ export default function Expenditure() {
         )}
 
         <div style={{ color: C.faint }} className="text-xs leading-relaxed space-y-2 px-1 pb-4">
-          <p className="flex gap-1.5"><Info size={13} className="shrink-0 mt-0.5" /><span>Log the grams you <em>dispense</em> — a steady grazing-leftover habit cancels out, since the estimate calibrates dispensed calories against her weight response.</span></p>
+          <p className="flex gap-1.5"><Info size={13} className="shrink-0 mt-0.5" /><span>Log the grams you <em>dispense</em> — a steady grazing-leftover habit cancels out, since the estimate calibrates dispensed calories against the weight response.</span></p>
           <p>Method: expenditure ≈ mean intake − ρ × weight-change rate (ρ ≈ 7800 kcal/kg, inferred from feline body-composition studies — see README), over a trailing window. Safe change rate 0.5–2%/week (AAHA / APOP); loss floor ~0.8 × RER at ideal weight. Not veterinary advice.</p>
         </div>
       </div>

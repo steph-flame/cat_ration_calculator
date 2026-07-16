@@ -35,7 +35,7 @@ export default function Home() {
 
   const { target, measured, dir } = resolveTarget({ t, expenditure, expSettings });
   const targetLine = measured
-    ? dir === "maintain" ? "measured maintenance" : `gentle ${dir === "gain" ? "surplus" : "trim"} · her measured burn`
+    ? dir === "maintain" ? "measured maintenance" : `gentle ${dir === "gain" ? "surplus" : "trim"} · measured burn`
     : "from the vet formula";
 
   // Masthead headline + one-line status — every branch reads only real, already-computed
@@ -63,10 +63,10 @@ export default function Home() {
 
   const tools = [
     { href: "#/ration", icon: Scale, dot: "accent", title: "Ration planner",
-      desc: "Split tonight's calories into gram portions across her foods.",
+      desc: "Split tonight's calories into gram portions, food by food.",
       fig: `${r0(target)} kcal → ${ration.items.length} food${ration.items.length === 1 ? "" : "s"}` },
     { href: "#/expenditure", icon: Activity, dot: "second", title: "Energy expenditure",
-      desc: "What she actually burns — measured from weigh-ins, not guessed.",
+      desc: `What ${name} actually burns — measured from weigh-ins, not guessed.`,
       fig: expenditure.enoughData ? `${r0(expenditure.kcal)} ±${r0(1.96 * expenditure.sd)} kcal` : "log more to measure" },
     { href: "#/log", icon: NotebookPen, dot: "neutral", title: "Log",
       desc: "Weigh-ins and meals, day by day — these feed the expenditure estimate.",
