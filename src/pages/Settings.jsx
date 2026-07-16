@@ -1,12 +1,14 @@
-import { ChevronLeft, Settings as SettingsIcon, Plus, Download, Upload, AlertTriangle, Trash2, RotateCcw } from "lucide-react";
-import { C } from "../theme.js";
+import { ChevronLeft, Settings as SettingsIcon, Plus, Download, Upload, AlertTriangle, Trash2, RotateCcw, Check } from "lucide-react";
+import { C, SKINS } from "../theme.js";
 import { useApp } from "../state/AppState.jsx";
 import { validateImport } from "../lib/validate.js";
+import CatMark from "../components/CatMark.jsx";
 
 const catLabel = (c) => c.name || "unnamed cat";
+const SKIN_NAMES = { original: "Original", blossom: "Blossom", tidepool: "Tidepool", spruce: "Spruce" };
 
 export default function Settings() {
-  const { p, catsSummary, activeCatId, switchCat, addCat, deleteCat, clearCatHistory, eraseAll, fridgeDays, exportData, importData } = useApp();
+  const { p, catsSummary, activeCatId, switchCat, addCat, deleteCat, clearCatHistory, eraseAll, fridgeDays, exportData, importData, skin, setSkin } = useApp();
 
   const doExport = () => {
     const blob = new Blob([exportData()], { type: "application/json" });
@@ -47,10 +49,24 @@ export default function Settings() {
           <a href="#/" style={{ color: C.sub }} className="inline-flex items-center gap-1 hover:underline"><ChevronLeft size={13} /> home</a>
         </nav>
 
-        <div className="mb-6">
-          <div style={{ color: C.spruce }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><SettingsIcon size={13} /> settings</div>
-          <h1 className="text-2xl font-semibold leading-tight" style={{ letterSpacing: "-0.01em" }}>Settings</h1>
+        <div className="flex items-end gap-4 mb-6">
+          <CatMark size={60} />
+          <div className="min-w-0">
+            <div style={{ color: C.amber }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><SettingsIcon size={13} /> settings</div>
+            <h1 className="text-[26px] font-extrabold leading-tight" style={{ letterSpacing: "-0.02em" }}>Settings</h1>
+          </div>
         </div>
+
+        {/* appearance */}
+        <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
+          <h2 className="font-medium mb-1">Appearance</h2>
+          <p style={{ color: C.faint }} className="text-xs mb-3">Four palettes, same layout. Applies instantly and remembers your choice — shared across every cat.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {Object.keys(SKINS).map((name) => (
+              <SkinSwatch key={name} name={name} tokens={SKINS[name]} active={skin === name} onClick={() => setSkin(name)} />
+            ))}
+          </div>
+        </section>
 
         {/* cats */}
         <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
@@ -107,5 +123,27 @@ export default function Settings() {
         </section>
       </div>
     </div>
+  );
+}
+
+// One skin swatch: a small circle in that skin's own ground/accent/second (literal hexes
+// from SKINS, not the C token map — a swatch has to show every skin's true colors
+// regardless of which one is currently active).
+function SkinSwatch({ name, tokens, active, onClick }) {
+  return (
+    <button onClick={onClick} aria-pressed={active} aria-label={`${SKIN_NAMES[name] || name} skin${active ? ", active" : ""}`}
+      style={{ borderColor: active ? tokens.accent : C.line, background: active ? tokens.ground : "transparent" }}
+      className="flex flex-col items-center gap-1.5 border rounded-2xl px-2 py-3">
+      <span style={{ background: tokens.ground, borderColor: C.line }} className="relative w-10 h-10 rounded-full border">
+        <span style={{ background: tokens.accent }} className="absolute left-0.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-white/60" />
+        <span style={{ background: tokens.second }} className="absolute right-0.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-white/60" />
+        {active && (
+          <span style={{ background: tokens.accent, color: tokens.ground, borderColor: tokens.ground }} className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full grid place-items-center border-2">
+            <Check size={9} strokeWidth={3} />
+          </span>
+        )}
+      </span>
+      <span className="text-xs font-medium" style={{ color: active ? C.ink : C.sub }}>{SKIN_NAMES[name] || name}</span>
+    </button>
   );
 }

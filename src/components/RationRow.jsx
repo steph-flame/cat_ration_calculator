@@ -28,7 +28,7 @@ export default function RationRow({ f, target, onSet, onSlidePct, onPrefill, onR
           onChangeName={(v) => onSet(f.id, "name", v)}
           onPick={(food) => onPrefill(f.id, libEntry(food))}
         />
-        <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+        <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
           {[["perKg", "dry / kcal·kg"], ["perUnit", "wet / kcal·can"]].map(([m, lbl]) => (
             <button key={m} onClick={() => onSet(f.id, "mode", m)} aria-pressed={f.mode === m} style={{ background: f.mode === m ? C.spruce : "transparent", color: f.mode === m ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
           ))}

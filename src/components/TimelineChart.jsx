@@ -254,7 +254,7 @@ function RangeRow({ range, onRange, ranges }) {
   return (
     <div className="flex items-center justify-between">
       <span style={{ color: C.sub }} className="text-xs">Timeline</span>
-      <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+      <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
         {ranges.map((r) => (
           <button key={r.key} onClick={() => onRange(r.key)} aria-pressed={range === r.key} style={{ background: range === r.key ? C.spruce : "transparent", color: range === r.key ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{r.label}</button>
         ))}

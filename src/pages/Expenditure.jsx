@@ -8,6 +8,7 @@ import { toDisplayWeight, weightLabel, weeklyRate, round5 } from "../lib/units.j
 import { useApp } from "../state/AppState.jsx";
 import TimelineChart from "../components/TimelineChart.jsx";
 import { Note } from "../components/primitives.jsx";
+import CatMark from "../components/CatMark.jsx";
 
 const fmtKcal = (n) => (n == null ? "—" : r0(n));
 
@@ -50,10 +51,13 @@ export default function Expenditure() {
           </span>
         </nav>
 
-        <div className="mb-6">
-          <div style={{ color: C.spruce }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><Activity size={13} /> energy expenditure</div>
-          <h1 className="text-2xl font-semibold leading-tight" style={{ letterSpacing: "-0.01em" }}>What {p.name} actually burns</h1>
-          <p style={{ color: C.sub }} className="text-sm mt-1">Back-calculated from her weight trend and what you fed. <a href="#/log" style={{ color: C.spruce }} className="underline">Log weigh-ins and food →</a></p>
+        <div className="flex items-end gap-4 mb-6">
+          <CatMark size={60} />
+          <div className="min-w-0">
+            <div style={{ color: C.amber }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><Activity size={13} /> energy expenditure</div>
+            <h1 className="text-[26px] font-extrabold leading-tight" style={{ letterSpacing: "-0.02em" }}>What {p.name} actually burns</h1>
+            <p style={{ color: C.sub }} className="text-sm mt-1">Measured from weight trend and what you fed — not a formula's guess. <a href="#/log" style={{ color: C.spruce }} className="underline">Log weigh-ins and food →</a></p>
+          </div>
         </div>
 
         {kitten && (
@@ -69,7 +73,7 @@ export default function Expenditure() {
           {showAlgo && (
             <div className="flex items-center justify-between mt-2 mb-1">
               <span style={{ color: C.faint }} className="text-[11px] leading-snug">v3 unobserved-components · v2 Kalman · v1 EWMA. v3 is best for almost everyone.</span>
-              <div className="flex rounded-lg overflow-hidden border shrink-0 ml-2" style={{ borderColor: C.line }}>
+              <div className="flex rounded-full overflow-hidden border shrink-0 ml-2" style={{ borderColor: C.line }}>
                 {[["v3", "v3"], ["v2", "v2"], ["v1", "v1"]].map(([a, lbl]) => (
                   <button key={a} onClick={() => setExpSettings({ algo: a })} aria-pressed={expSettings.algo === a} style={{ background: expSettings.algo === a ? C.spruce : "transparent", color: expSettings.algo === a ? "#fff" : C.sub }} className="text-xs px-2 py-1 font-mono">{lbl}</button>
                 ))}
@@ -113,7 +117,7 @@ export default function Expenditure() {
               <p style={{ color: C.faint }} className="text-xs leading-snug flex-1">Where <span style={{ color: CHART.intake }}>calories in</span> sits below <span style={{ color: CHART.expenditure }}>expenditure</span>, she's in a deficit and the weight above trends down. Shaded = 95% confidence.</p>
               <div className="flex items-center gap-1 shrink-0">
                 {analysis !== "none" && (
-                  <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+                  <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
                     {[["rate", "%/wk"], ["kcal", "± kcal"]].map(([m, l]) => (
                       <button key={m} onClick={() => setAnalysis(m)} aria-pressed={analysis === m} style={{ background: analysis === m ? C.spruce : "transparent", color: analysis === m ? "#fff" : C.sub }} className="text-xs px-1.5 py-1 font-mono">{l}</button>
                     ))}
@@ -130,7 +134,7 @@ export default function Expenditure() {
           <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-5 mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2"><Target size={16} style={{ color: C.amber }} /><h2 className="font-medium">Feeding plan</h2></div>
-              <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+              <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
                 {DIRECTIONS.map((d) => (
                   <button key={d} onClick={() => setExpSettings({ direction: d })} aria-pressed={dir === d} style={{ background: dir === d ? C.spruce : "transparent", color: dir === d ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{dirLabel[d]}</button>
                 ))}

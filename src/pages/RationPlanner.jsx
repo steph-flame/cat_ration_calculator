@@ -9,6 +9,7 @@ import { useApp } from "../state/AppState.jsx";
 import RationRow from "../components/RationRow.jsx";
 import SavedFoods from "../components/SavedFoods.jsx";
 import { Field, NumInput, Toggle, Row, RefRow, Note } from "../components/primitives.jsx";
+import CatMark from "../components/CatMark.jsx";
 
 export default function RationPlanner() {
   const {
@@ -72,7 +73,7 @@ export default function RationPlanner() {
   const pctBadge = (list) => (
     <div className="flex items-center gap-2 font-mono text-xs">
       <span style={{ color: Math.abs(list.sum - 100) < 0.5 ? C.spruce : C.amber }}>{r1(list.sum)}%</span>
-      {Math.abs(list.sum - 100) >= 0.5 && (<button onClick={list.normalize} style={{ borderColor: C.line, color: C.spruce }} className="border rounded px-1.5 py-0.5">→ 100%</button>)}
+      {Math.abs(list.sum - 100) >= 0.5 && (<button onClick={list.normalize} style={{ borderColor: C.line, color: C.spruce }} className="border rounded-full px-2 py-0.5">→ 100%</button>)}
     </div>
   );
 
@@ -87,10 +88,11 @@ export default function RationPlanner() {
           </span>
         </nav>
 
-        <div className="flex items-start justify-between gap-3 mb-6">
-          <div>
-            <div style={{ color: C.spruce }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><Scale size={13} /> ration planner</div>
-            <h1 className="text-2xl font-semibold leading-tight" style={{ letterSpacing: "-0.01em" }}>How much to feed</h1>
+        <div className="flex items-end gap-4 mb-6">
+          <CatMark size={60} />
+          <div className="min-w-0">
+            <div style={{ color: C.amber }} className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest mb-1"><Scale size={13} /> ration planner</div>
+            <h1 className="text-[26px] font-extrabold leading-tight" style={{ letterSpacing: "-0.02em" }}>How much to feed</h1>
             <p style={{ color: C.sub }} className="text-sm mt-1">Target energy from the animal, grams from the split, and a transition schedule. It shows its work.</p>
           </div>
         </div>
@@ -143,7 +145,7 @@ export default function RationPlanner() {
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
               <span style={{ color: C.sub }} className="text-xs">Body condition{p.bcAsOf && <span style={{ color: C.faint }}> · assessed {p.bcAsOf}</span>}</span>
-              <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+              <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
                 {["pct", "bcs"].map((m) => (<button key={m} onClick={() => set("bcMode", m)} aria-pressed={p.bcMode === m} style={{ background: p.bcMode === m ? C.spruce : "transparent", color: p.bcMode === m ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{m === "pct" ? "%" : "BCS"}</button>))}
               </div>
             </div>
@@ -174,7 +176,7 @@ export default function RationPlanner() {
           {/* energy basis */}
           <div className="flex items-center justify-between mb-3">
             <span style={{ color: C.sub }} className="text-xs">Energy basis</span>
-            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+            <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
               {[["formula", "Vet formula"], ["measured", "Measured"]].map(([m, lbl]) => (
                 <button key={m} onClick={() => setExpSettings({ energyBasis: m })} aria-pressed={expSettings.energyBasis === m} style={{ background: expSettings.energyBasis === m ? C.spruce : "transparent", color: expSettings.energyBasis === m ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{lbl}</button>
               ))}
@@ -306,7 +308,7 @@ export default function RationPlanner() {
               <div className="w-32 mx-auto mb-4"><Field label="Transition length" suffix="days"><NumInput value={tr.days} onChange={(v) => setTr((s) => ({ ...s, days: Math.max(1, Math.min(30, Number(v) || 1)) }))} step="1" /></Field></div>
               <div className="flex items-center justify-end gap-2 mb-2">
                 <span style={{ color: C.sub }} className="text-xs">Timeline in</span>
-                <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: C.line }}>
+                <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
                   {[["g", "grams"], ["kcal", "kcal"]].map(([u, lbl]) => (<button key={u} onClick={() => setTr((s) => ({ ...s, timelineUnit: u }))} aria-pressed={tlUnit === u} style={{ background: tlUnit === u ? C.spruce : "transparent", color: tlUnit === u ? "#fff" : C.sub }} className="text-xs px-2.5 py-1 font-mono">{lbl}</button>))}
                 </div>
               </div>
