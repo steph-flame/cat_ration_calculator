@@ -36,7 +36,7 @@ export default function Home() {
   const { target, measured, dir } = resolveTarget({ t, expenditure, expSettings });
   const targetLine = measured
     ? dir === "maintain" ? "measured maintenance" : `gentle ${dir === "gain" ? "surplus" : "trim"} · measured burn`
-    : "from the vet formula";
+    : t.goalId === "custom" ? "your custom target" : "from the vet formula";
 
   // Masthead headline + one-line status — every branch reads only real, already-computed
   // values (currentWeight, expenditure, t), never a fabricated number. The name always leads

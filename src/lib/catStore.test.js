@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addCat, deleteCat, clearCatHistory, switchCat, renameCat, freshCatState, freshProfile, defaultExpSettings, resolveUnit } from "./catStore.js";
+import { addCat, deleteCat, clearCatHistory, switchCat, renameCat, updateCatProfile, freshCatState, freshProfile, defaultExpSettings, resolveUnit } from "./catStore.js";
 
 const stateWith = (ids) => ({
   activeCatId: ids[0],
@@ -139,6 +139,33 @@ describe("renameCat", () => {
   it("is a no-op for an id that doesn't exist", () => {
     const s0 = stateWith(["a"]);
     const s1 = renameCat(s0, "nope", "Mochi");
+    expect(s1).toBe(s0);
+  });
+});
+
+describe("updateCatProfile", () => {
+  it("patches dob, leaving other cats untouched (same reference)", () => {
+    const s0 = stateWith(["a", "b"]);
+    const s1 = updateCatProfile(s0, "a", { dob: "2020-01-01" });
+    expect(s1.cats.a.profile.dob).toBe("2020-01-01");
+    expect(s1.cats.b).toBe(s0.cats.b);
+  });
+  it("patches neutered", () => {
+    const s0 = stateWith(["a"]);
+    const s1 = updateCatProfile(s0, "a", { neutered: true });
+    expect(s1.cats.a.profile.neutered).toBe(true);
+  });
+  it("patches multiple fields at once, leaving the rest of the profile untouched", () => {
+    const s0 = stateWith(["a"]);
+    const s1 = updateCatProfile(s0, "a", { dob: "2019-05-05", neutered: true });
+    expect(s1.cats.a.profile.dob).toBe("2019-05-05");
+    expect(s1.cats.a.profile.neutered).toBe(true);
+    expect(s1.cats.a.profile.name).toBe(s0.cats.a.profile.name);
+    expect(s1.cats.a.profile.goal).toBe(s0.cats.a.profile.goal);
+  });
+  it("is a no-op for an id that doesn't exist", () => {
+    const s0 = stateWith(["a"]);
+    const s1 = updateCatProfile(s0, "nope", { dob: "2020-01-01" });
     expect(s1).toBe(s0);
   });
 });

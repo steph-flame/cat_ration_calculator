@@ -14,7 +14,7 @@ import CatMark from "../components/CatMark.jsx";
 export default function RationPlanner() {
   const {
     p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct,
-    today, currentWeight, logWeight,
+    currentWeight, logWeight,
     t, ration, start, library, saveFood, tr, setTr, fridgeDays, setFridgeDays,
     expenditure, expSettings, setExpSettings, unit,
   } = useApp();
@@ -98,30 +98,22 @@ export default function RationPlanner() {
 
         {/* the animal */}
         <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
-          <div className="flex items-baseline justify-between mb-4">
+          <div className="flex items-baseline justify-between mb-1">
             <h2 className="font-medium">The cat</h2>
-            <input value={p.name} onChange={(e) => set("name", e.target.value)} autoComplete="off" data-lpignore="true" data-1p-ignore data-form-type="other" style={{ color: C.spruce }} className="text-right text-sm font-mono bg-transparent outline-none w-32" aria-label="Cat's name" />
+            <a href="#/settings" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2">edit profile →</a>
           </div>
-          {/* permanent attributes — set once */}
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Date of birth">
-              <input type="date" value={p.dob || ""} max={today} onChange={(e) => set("dob", e.target.value)} className="w-full bg-transparent outline-none font-mono text-sm tabular-nums" style={{ color: C.ink }} aria-label="Date of birth" />
-            </Field>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span style={{ color: C.sub }} className="text-xs">Age</span>
-                <button onClick={() => set("ageUnit", ageUnit === "years" ? "months" : "years")} title="Switch unit" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2">{ageUnit}</button>
-              </div>
-              <div style={{ borderColor: C.line }} className="flex items-baseline border rounded-lg px-2.5 py-1.5 bg-white">
-                {dobMissing ? (
-                  <span style={{ color: C.warn }} className="text-xs font-mono">set date of birth ↑ — age unknown</span>
-                ) : (
-                  <><span className="font-mono text-sm tabular-nums" style={{ color: C.ink }}>{ageDisplay}</span><span style={{ color: C.faint }} className="text-xs font-mono ml-1 shrink-0">{ageUnit === "years" ? "yr" : "mo"} · from birthday</span></>
-                )}
-              </div>
-            </div>
+          {/* permanent attributes now live in Settings — this is a read-only identity line */}
+          <div style={{ color: C.sub }} className="flex items-center gap-1.5 flex-wrap text-sm mb-4">
+            <span style={{ color: C.ink }} className="font-medium">{p.name || "unnamed cat"}</span>
+            <span style={{ color: C.faint }}>·</span>
+            {dobMissing ? (
+              <a href="#/settings" style={{ color: C.warn }} className="text-xs underline decoration-dotted underline-offset-2">age unknown — set date of birth in settings →</a>
+            ) : (
+              <span className="font-mono text-xs">{ageDisplay} {ageUnit === "years" ? "yr" : "mo"}</span>
+            )}
+            <span style={{ color: C.faint }}>·</span>
+            <span className="text-xs">{p.neutered ? "spayed" : "intact"}</span>
           </div>
-          <div className="mt-3 flex items-center gap-2"><span style={{ color: C.sub }} className="text-xs w-28">Spayed / neutered</span><Toggle value={p.neutered} onChange={(v) => set("neutered", v)} /></div>
 
           {/* current state — read from the weight log */}
           <div style={{ borderColor: C.line }} className="mt-4 border-t pt-4">
@@ -187,7 +179,7 @@ export default function RationPlanner() {
               <div style={{ color: C.sub }} className="text-xs uppercase tracking-widest font-mono">Feed per day</div>
               <div className="flex items-baseline gap-2 mt-1"><span style={{ color: C.amber }} className="text-5xl font-mono font-semibold tabular-nums">{r0(target)}</span><span style={{ color: C.sub }} className="text-lg font-mono">kcal</span></div>
               <div style={{ color: C.faint }} className="text-xs font-mono mt-1">
-                {useMeasured ? (measuredDir === "maintain" ? "measured maintenance" : `measured ${measuredDir === "gain" ? "+ surplus" : "− deficit"} (${r1(measuredPlan.resultingRatePctPerWeek)}%/wk)`) : "from vet formula"}
+                {useMeasured ? (measuredDir === "maintain" ? "measured maintenance" : `measured ${measuredDir === "gain" ? "+ surplus" : "− deficit"} (${r1(measuredPlan.resultingRatePctPerWeek)}%/wk)`) : goalId === "custom" ? "your custom target" : "from vet formula"}
               </div>
             </div>
             <div style={{ color: C.faint }} className="text-xs text-right font-mono">{t.stage}<br />{showIdeal ? `ideal ${showW(t.idealWeight)}` : `RER ${r0(t.rerCur)}`}</div>

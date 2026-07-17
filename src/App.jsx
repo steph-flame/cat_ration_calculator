@@ -63,7 +63,7 @@ function Router() {
         <Banner tone="warn">This browser isn't letting the app save (private mode?). Changes won't persist — use Export in Settings to keep your data.</Banner>
       )}
       {firstRun && !introClosed && (
-        <Banner onClose={() => setIntroClosed(true)}>Showing example data (a sample cat). Set the cat's name, date of birth, and a weigh-in on the ration planner to make it yours — or head to Settings to start fresh or add another cat.</Banner>
+        <Banner onClose={() => setIntroClosed(true)}>Showing example data (a sample cat). Set the cat's profile in Settings and log a weigh-in on the ration planner to make it yours — or head to Settings to start fresh or add another cat.</Banner>
       )}
       {!installNudgeClosed && showInstallNudge() && (
         <Banner onClose={() => { dismissBanner(); setInstallNudgeClosed(true); }}>

@@ -73,9 +73,15 @@ export function switchCat(state, id) {
   return state.cats[id] ? { ...state, activeCatId: id } : state;
 }
 
-// Rename any cat by id — not just the active one, so Settings can edit every row inline
-// without switching to it first. A no-op if the id doesn't exist.
-export function renameCat(state, id, name) {
+// Patch any cat's profile fields by id — not just the active one, so Settings can edit
+// every row inline without switching to it first. A no-op if the id doesn't exist;
+// untouched cats keep reference equality.
+export function updateCatProfile(state, id, patch) {
   if (!state.cats[id]) return state;
-  return { ...state, cats: { ...state.cats, [id]: { ...state.cats[id], profile: { ...state.cats[id].profile, name } } } };
+  return { ...state, cats: { ...state.cats, [id]: { ...state.cats[id], profile: { ...state.cats[id].profile, ...patch } } } };
+}
+
+// Rename any cat by id — a thin wrapper over updateCatProfile for the common single-field case.
+export function renameCat(state, id, name) {
+  return updateCatProfile(state, id, { name });
 }

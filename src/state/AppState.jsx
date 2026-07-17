@@ -12,7 +12,7 @@ import { usePersistence, store, probeStorage } from "../lib/storage.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
 import {
   addCat as addCatPure, deleteCat as deleteCatPure, clearCatHistory as clearCatHistoryPure, switchCat as switchCatPure,
-  renameCat as renameCatPure, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit,
+  updateCatProfile as updateCatProfilePure, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit,
 } from "../lib/catStore.js";
 import { toV2, migrateV1 } from "../lib/migrate.js";
 
@@ -225,14 +225,16 @@ export function AppProvider({ children }) {
   const setPct = (v) => { const cv = clamp(num(v), -60, 100); setP((s) => ({ ...s, pctOver: cv, bcs: pctToBcs(cv), bcAsOf: today })); }; // clamp: a wild % → absurd ideal weight → overfeed
 
   // One row per cat for the Settings "Cats" list / header switcher: id, display name (or
-  // blank — callers show "unnamed cat"), a formatted age (or null — "age unknown"), and how
-  // many weigh-ins it has logged.
+  // blank — callers show "unnamed cat"), a formatted age (or null — "age unknown"), the raw
+  // dob/neutered (for Settings' profile editor), and how many weigh-ins it has logged.
   const catsSummary = Object.entries(catsState.cats).map(([id, cat]) => {
     const months = ageMonthsFromDob(cat.profile?.dob, today);
     const unit = cat.profile?.ageUnit || "months";
     return {
       id,
       name: (cat.profile?.name || "").trim(),
+      dob: cat.profile?.dob || "",
+      neutered: !!cat.profile?.neutered,
       ageDisplay: months == null ? null : unit === "years" ? `${r1(months / 12)} yr` : `${r1(months)} mo`,
       weighIns: (cat.weightLog || []).length,
       active: id === catsState.activeCatId,
@@ -242,7 +244,7 @@ export function AppProvider({ children }) {
   const addCat = () => setCatsState((s) => addCatPure(s));
   const deleteCat = (id) => setCatsState((s) => deleteCatPure(s, id));
   const clearCatHistory = (id) => setCatsState((s) => clearCatHistoryPure(s, id));
-  const renameCat = (id, name) => setCatsState((s) => renameCatPure(s, id, name));
+  const updateCatProfile = (id, patch) => setCatsState((s) => updateCatProfilePure(s, id, patch));
 
   // Global "erase all" — wipes every cat, the saved-food library, and fridgeDays back to a
   // single fresh blank cat + the built-in food list. Not the seed demo cat: a user who's
@@ -263,7 +265,7 @@ export function AppProvider({ children }) {
     tr, setTr, fridgeDays, setFridgeDays, expSettings, setExpSettings,
     skin, setSkin, unit, setUnit,
     t, expenditure,
-    activeCatId: catsState.activeCatId, catsSummary, switchCat, addCat, deleteCat, clearCatHistory, eraseAll,
+    activeCatId: catsState.activeCatId, catsSummary, switchCat, addCat, deleteCat, clearCatHistory, updateCatProfile, eraseAll,
     exportData: () => JSON.stringify(persistData, null, 2),
     importData,
   };
