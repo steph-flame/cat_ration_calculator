@@ -56,6 +56,10 @@ tools that share one profile, food library, and history.
   are exempt, so this is data-loss protection for your weigh-in history, not just
   convenience. iOS Safari users get a one-time in-app nudge if not yet installed.
 
+**Privacy:** everything you enter stays in your browser — there is no server and no account.
+The site uses [GoatCounter](https://www.goatcounter.com/), a cookie-less, open-source page counter,
+so we can see *how many* people visit and which pages — never who you are or anything you type.
+
 > A planning aid, not veterinary advice. Re-weigh every 3–4 weeks and adjust.
 
 ## The science

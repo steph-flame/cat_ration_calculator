@@ -12,6 +12,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Kilocat" />
+    <!-- GoatCounter: cookie-less, privacy-respecting page counts (see README). The path hook
+         records the hash route so #/ration vs #/expenditure count as distinct pages; the
+         hashchange listener counts in-app navigation, not just first loads. -->
+    <script>
+      window.goatcounter = { path: () => location.pathname + location.hash };
+      window.addEventListener("hashchange", () => {
+        if (window.goatcounter.count) window.goatcounter.count({ path: location.pathname + location.hash });
+      });
+    </script>
+    <script data-goatcounter="https://steph-flame.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
   </head>
   <body>
     <div id="root"></div>
