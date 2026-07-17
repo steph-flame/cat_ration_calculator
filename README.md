@@ -1,4 +1,6 @@
-# Cat Ration Calculator
+# Kilocat 🐈
+
+*Measured, not guessed.*
 
 Work out **how much to feed a cat**, two ways: a vet-formula energy target, or the
 cat's *measured* maintenance back-calculated from its weight trend and intake — plus

@@ -18,9 +18,9 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg", "apple-touch-icon.png"],
       manifest: {
-        name: "Cat Ration Calculator",
-        short_name: "Cat Ration",
-        description: "Target energy + food split + blend-to-blend transition planner for feeding a cat.",
+        name: "Kilocat",
+        short_name: "Kilocat",
+        description: "Feed the cat by measurement, not guesswork — vet-formula targets, measured expenditure, ration splitting, transition planning.",
         start_url: base,
         scope: base,
         display: "standalone",
