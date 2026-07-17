@@ -15,6 +15,7 @@ import {
   updateCatProfile as updateCatProfilePure, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit,
 } from "../lib/catStore.js";
 import { toV2, migrateV1 } from "../lib/migrate.js";
+import { login as lrLogin, listRobots as lrListRobots, syncWeights as lrSyncWeights, FIRST_SYNC_DAYS } from "../lib/litterRobot.js";
 
 // Clean up legacy food data: strip "(dry)"/"(wet)", snap macro-identical near-dupes to their
 // canonical built-in name, and retire the generic Tiki. Pure — used on load and on import.
@@ -82,6 +83,10 @@ export function AppProvider({ children }) {
   // data — used to live in each cat's expSettings. Defaults to "kg".
   const [unit, setUnitState] = useState("kg");
   const setUnit = (u) => { if (u === "kg" || u === "lb") setUnitState(u); };
+  // Litter-Robot connection: shared, top-level (like skin/unit/fridgeDays), not per-cat —
+  // one Whisker account's refresh token, which robot serial it's reading, and which cat's
+  // weightLog it feeds. Null = not connected. Never stores the password, only this token.
+  const [litterRobot, setLitterRobotState] = useState(null);
 
   const activeCat = catsState.cats[catsState.activeCatId];
   const updateActiveCat = (fn) =>
@@ -104,6 +109,7 @@ export function AppProvider({ children }) {
     if (typeof d.skin === "string" && SKINS[d.skin]) setSkinState(d.skin);
     const resolved = resolveUnit(d.unit, activeCatId && cats[activeCatId]?.expSettings?.unit);
     if (resolved) setUnitState(resolved);
+    if (d.litterRobot !== undefined) setLitterRobotState(d.litterRobot);
   };
 
   // Import (user-picked file, Settings → Data): a v2 file is a full backup, so it replaces
@@ -137,9 +143,10 @@ export function AppProvider({ children }) {
     if (typeof raw.skin === "string" && SKINS[raw.skin]) setSkinState(raw.skin);
     const resolved = resolveUnit(raw.unit, newActiveCat?.expSettings?.unit);
     if (resolved) setUnitState(resolved);
+    if (raw.litterRobot !== undefined) setLitterRobotState(raw.litterRobot);
   };
 
-  const persistData = { v: 2, activeCatId: catsState.activeCatId, cats: catsState.cats, library: library.foods, fridgeDays, skin, unit };
+  const persistData = { v: 2, activeCatId: catsState.activeCatId, cats: catsState.cats, library: library.foods, fridgeDays, skin, unit, litterRobot };
   const loaded = usePersistence(persistData, hydrate);
   const firstRun = loaded && !hydrated; // showing seed defaults, no saved data yet
 
@@ -256,7 +263,69 @@ export function AppProvider({ children }) {
     setCatsState({ activeCatId: id, cats: { [id]: freshCatState() } });
     library.reset();
     setFridgeDays(3);
+    setLitterRobotState(null);
   };
+
+  // ---- Litter-Robot weight sync ----
+  // Append parsed weigh-ins to a SPECIFIC cat's log by id — not necessarily the active cat,
+  // since the connection's target cat (conn.catId) can differ from whichever cat is
+  // currently being viewed. A thin sibling of makeLogView's add(), for an arbitrary cat.
+  const appendWeightsToCat = (catId, entries) => {
+    if (!entries.length) return;
+    setCatsState((s) => (s.cats[catId]
+      ? { ...s, cats: { ...s.cats, [catId]: { ...s.cats[catId], weightLog: [...s.cats[catId].weightLog, ...entries.map((e) => ({ id: uid(), ...e }))] } } }
+      : s));
+  };
+
+  // One sync pass against a given connection: refresh the session, pull activity since its
+  // last sync (or FIRST_SYNC_DAYS back on the very first sync), dedupe, append, and record
+  // when it happened. Shared by the on-load background sync, "sync now", and the sync that
+  // kicks off right after Connect. Never throws — callers get { ok, count, error }, for a
+  // legible status in the UI instead of an unhandled rejection.
+  const runLitterRobotSync = async (conn) => {
+    if (!conn) return { ok: false };
+    const cat = catsState.cats[conn.catId];
+    if (!cat) return { ok: false, error: new Error("The cat this connection feeds no longer exists.") };
+    const sinceMs = conn.lastSyncTs || Date.now() - FIRST_SYNC_DAYS * 86400000;
+    try {
+      const { entries, syncedAt } = await lrSyncWeights({ refreshToken: conn.refreshToken, serial: conn.serial, sinceMs, existingEntries: cat.weightLog });
+      appendWeightsToCat(conn.catId, entries);
+      setLitterRobotState((s) => (s ? { ...s, lastSyncTs: syncedAt } : s));
+      return { ok: true, count: entries.length };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  };
+
+  // Step 1 of Connect: log in with the owner's own credentials (used ONLY for this one
+  // request — never stored) and list their robots. Returns the pieces Settings needs to
+  // show a robot picker; doesn't touch state yet (nothing is "connected" until finish()).
+  const connectLitterRobotStart = async (email, password) => {
+    const { idToken, refreshToken, userId } = await lrLogin(email, password);
+    const robots = await lrListRobots(idToken, userId);
+    return { refreshToken, robots };
+  };
+  // Step 2: commit the connection (refresh token + chosen serial + target cat) and kick off
+  // the first sync immediately. Returns that first sync's result so the UI can show it.
+  const connectLitterRobotFinish = (refreshToken, serial, catId) => {
+    const conn = { refreshToken, serial, catId, lastSyncTs: null };
+    setLitterRobotState(conn);
+    return runLitterRobotSync(conn);
+  };
+  // Wipes the token + connection only — already-imported weigh-ins stay in the cat's log
+  // (they're indistinguishable from any other logged weight once they're in).
+  const disconnectLitterRobot = () => setLitterRobotState(null);
+  const syncLitterRobotNow = () => runLitterRobotSync(litterRobot);
+
+  // Background sync on app load: once, if a connection already exists. Deliberately keyed
+  // only on `loaded` (not on litterRobot/catsState) so it fires exactly once per session —
+  // depending on the connection itself would re-fire every time lastSyncTs changes, i.e.
+  // right after the sync it just ran.
+  useEffect(() => {
+    if (!loaded || !litterRobot) return;
+    runLitterRobotSync(litterRobot);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
 
   const value = {
     loaded, firstRun, storageOk, p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct,
@@ -268,6 +337,7 @@ export function AppProvider({ children }) {
     activeCatId: catsState.activeCatId, catsSummary, switchCat, addCat, deleteCat, clearCatHistory, updateCatProfile, eraseAll,
     exportData: () => JSON.stringify(persistData, null, 2),
     importData,
+    litterRobot, connectLitterRobotStart, connectLitterRobotFinish, disconnectLitterRobot, syncLitterRobotNow,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
