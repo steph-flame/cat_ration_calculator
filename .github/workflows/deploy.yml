@@ -28,7 +28,7 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          VITE_BASE: /cat_ration_calculator/ # GitHub Pages serves from /<repo>/
+          VITE_BASE: /kilocat/ # GitHub Pages serves from /<repo>/
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:

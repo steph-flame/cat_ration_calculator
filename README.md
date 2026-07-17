@@ -188,7 +188,7 @@ The build is a static site (`dist/`) — host it anywhere. For GitHub Pages unde
 project path, build with the repo name as base:
 
 ```bash
-VITE_BASE="/cat_ration_calculator/" npm run build
+VITE_BASE="/kilocat/" npm run build
 ```
 
 ## License
