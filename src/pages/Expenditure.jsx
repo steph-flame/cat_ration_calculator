@@ -5,6 +5,8 @@ import { r0, r1 } from "../lib/util.js";
 import { planWeightChange, autoDirection, DIRECTIONS, RATE } from "../lib/weightPlan.js";
 import { buildDailyFrame, RANGES } from "../lib/timeline.js";
 import { toDisplayWeight, weightLabel, weeklyRate, round5 } from "../lib/units.js";
+import { floorSdKcal } from "../lib/expenditure.js";
+import { dailyReduce, median } from "../lib/series.js";
 import { useApp } from "../state/AppState.jsx";
 import TimelineChart from "../components/TimelineChart.jsx";
 import { Note } from "../components/primitives.jsx";
@@ -13,7 +15,7 @@ import CatMark from "../components/CatMark.jsx";
 const fmtKcal = (n) => (n == null ? "—" : r0(n));
 
 export default function Expenditure() {
-  const { p, t, expenditure, intakeLog, expSettings, setExpSettings, unit } = useApp();
+  const { p, t, expenditure, intakeLog, weightLog, expSettings, setExpSettings, unit } = useApp();
   const e = expenditure;
   const kitten = t.stage !== "adult"; // stage, not a raw age check — catches a newborn (dob = today, age 0) too
   const algoName = { v3: "unobserved-components", v2: "Kalman filter", v1: "EWMA + regression" }[expSettings.algo];
@@ -32,9 +34,28 @@ export default function Expenditure() {
   const [range, setRange] = useState("3m");
   const [analysis, setAnalysis] = useState("none"); // 'none' | 'rate' | 'kcal'
   const rangeDays = RANGES.find((r) => r.key === range)?.days;
+
+  // Before enoughData the estimate is still worth showing — the filters return null (never
+  // ±0) below 2 weigh-ins, and even once they return a number the band is honestly wide (see
+  // floorSdKcal). displayKcal/displaySd are ONLY for what this page renders; resolveTarget
+  // (shared with Home/Ration) still gates the actual feeding target on e.enoughData untouched.
+  const priorKcal = t.refs.maintain;
+  const displayKcal = e.kcal ?? priorKcal;
+  const displaySd = e.enoughData ? e.sd : Math.max(e.sd || 0, floorSdKcal(e.nDays, priorKcal));
+
+  // The estimator's own `trend` needs ≥2 weigh-in days before it produces anything (that's
+  // what powers the confidence-band math). With just one logged weigh-in, fall back to the raw
+  // point(s) so the timeline can still plot "whatever exists" — flatted onto the same
+  // display estimate + floored band shown in the module above, so the two never disagree.
+  const rawTrend = useMemo(() => {
+    if (e.trend.length) return e.trend;
+    const raw = dailyReduce(weightLog.items.map((w) => ({ date: w.date, value: w.kg })), median);
+    return raw.map((d) => ({ date: d.date, kg: d.value, e: displayKcal, sd: displaySd }));
+  }, [e.trend, weightLog.items, displayKcal, displaySd]);
+
   const frame = useMemo(
-    () => buildDailyFrame(e.trend, intakeLog.items.map((x) => ({ date: x.date, value: x.kcal })), rangeDays),
-    [e.trend, intakeLog.items, rangeDays],
+    () => buildDailyFrame(rawTrend, intakeLog.items.map((x) => ({ date: x.date, value: x.kcal })), rangeDays),
+    [rawTrend, intakeLog.items, rangeDays],
   );
 
   const rate = weeklyRate(e.rateKgPerWeek, unit);
@@ -98,35 +119,52 @@ export default function Expenditure() {
             </>
           ) : (
             <>
-              <div className="flex items-baseline gap-2 mt-1">
-                <span style={{ color: C.faint }} className="text-4xl font-mono font-semibold tabular-nums">{r0(t.refs.maintain)}</span>
+              <div className="flex items-baseline gap-2 mt-1 flex-wrap">
+                <span style={{ color: C.amber }} className="text-4xl font-mono font-semibold tabular-nums">{fmtKcal(displayKcal)}</span>
                 <span style={{ color: C.sub }} className="text-lg font-mono">kcal/day</span>
-                <span style={{ color: C.faint }} className="text-xs font-mono ml-1">vet formula</span>
+                <span style={{ color: C.faint }} className="text-xs font-mono ml-1">± {r0(1.96 * displaySd)} (95%)</span>
+                <span style={{ color: C.faint }} className="text-xs font-mono">{e.kcal == null ? "vet formula" : "early estimate"}</span>
               </div>
-              <Note>Not enough logged data yet ({e.nDays} day{e.nDays === 1 ? "" : "s"} of weight). <a href="#/log" style={{ color: C.spruce }} className="underline">Log weight + food</a> for ~2 weeks and a measured estimate replaces the formula here, with a confidence band that tightens as data builds.</Note>
+              {e.trendWeightKg != null && (
+                <div className="grid grid-cols-3 gap-2 mt-3 text-xs font-mono">
+                  <Stat label="Trend weight" value={showW(e.trendWeightKg)} />
+                  <Stat label={e.rateKgPerWeek == null ? "Rate" : e.rateKgPerWeek <= 0 ? "Losing" : "Gaining"} value={e.rateKgPerWeek == null ? "—" : `${r0(rate.value)} ${rate.unit}`} />
+                  <Stat label="Rate" value={e.ratePctPerWeek == null ? "—" : `${e.ratePctPerWeek > 0 ? "+" : ""}${r1(e.ratePctPerWeek)} %/wk`} />
+                </div>
+              )}
+              <Note>
+                {e.nDays > 0 ? `${e.nDays} day${e.nDays === 1 ? "" : "s"} logged — mostly` : "Mostly"} the vet formula's guess until ~2 weeks of logs — that's why the band above is wide. <a href="#/log" style={{ color: C.spruce }} className="underline">Log weight + food</a> and it tightens into a real measured estimate.
+              </Note>
             </>
           )}
         </section>
 
-        {/* timeline */}
-        {e.trend.length >= 2 && (
-          <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
-            <TimelineChart frame={frame} range={range} onRange={setRange} ranges={RANGES} unit={unit} analysisMode={analysis === "none" ? null : analysis} />
-            <div className="flex items-center justify-between mt-2 gap-3">
-              <p style={{ color: C.faint }} className="text-xs leading-snug flex-1">Where <span style={{ color: CHART.intake }}>calories in</span> sits below <span style={{ color: CHART.expenditure }}>expenditure</span>, she's in a deficit and the weight above trends down. Shaded = 95% confidence.</p>
-              <div className="flex items-center gap-1 shrink-0">
-                {analysis !== "none" && (
-                  <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
-                    {[["rate", "%/wk"], ["kcal", "± kcal"]].map(([m, l]) => (
-                      <button key={m} onClick={() => setAnalysis(m)} aria-pressed={analysis === m} style={{ background: analysis === m ? C.spruce : "transparent", color: analysis === m ? "#fff" : C.sub }} className="text-xs px-1.5 py-1 font-mono">{l}</button>
-                    ))}
-                  </div>
-                )}
-                <button onClick={() => setAnalysis((a) => (a === "none" ? "rate" : "none"))} aria-pressed={analysis !== "none"} style={{ borderColor: C.line, color: analysis !== "none" ? C.spruce : C.sub, background: analysis !== "none" ? C.spruceSoft : "transparent" }} className="text-xs font-mono border rounded-lg px-2 py-1">analysis</button>
+        {/* timeline — always shown once there's any logged weigh-in, however sparse; a truly
+            empty log gets a friendly prompt instead of an empty chart. */}
+        <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
+          {rawTrend.length > 0 ? (
+            <>
+              <TimelineChart frame={frame} range={range} onRange={setRange} ranges={RANGES} unit={unit} analysisMode={analysis === "none" ? null : analysis} />
+              <div className="flex items-center justify-between mt-2 gap-3">
+                <p style={{ color: C.faint }} className="text-xs leading-snug flex-1">Where <span style={{ color: CHART.intake }}>calories in</span> sits below <span style={{ color: CHART.expenditure }}>expenditure</span>, she's in a deficit and the weight above trends down. Shaded = 95% confidence{!e.enoughData && " (wide until ~2 weeks of logs)"}.</p>
+                <div className="flex items-center gap-1 shrink-0">
+                  {analysis !== "none" && (
+                    <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
+                      {[["rate", "%/wk"], ["kcal", "± kcal"]].map(([m, l]) => (
+                        <button key={m} onClick={() => setAnalysis(m)} aria-pressed={analysis === m} style={{ background: analysis === m ? C.spruce : "transparent", color: analysis === m ? "#fff" : C.sub }} className="text-xs px-1.5 py-1 font-mono">{l}</button>
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => setAnalysis((a) => (a === "none" ? "rate" : "none"))} aria-pressed={analysis !== "none"} style={{ borderColor: C.line, color: analysis !== "none" ? C.spruce : C.sub, background: analysis !== "none" ? C.spruceSoft : "transparent" }} className="text-xs font-mono border rounded-lg px-2 py-1">analysis</button>
+                </div>
               </div>
+            </>
+          ) : (
+            <div style={{ color: C.faint, borderColor: C.line }} className="border border-dashed rounded-xl text-xs text-center py-10">
+              No weigh-ins yet — <a href="#/log" style={{ color: C.spruce }} className="underline">log {p.name}'s weight</a> and this fills in, starting from your very first entry.
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         {/* feeding plan — adults only; kittens grow into their frame instead */}
         {!kitten && (

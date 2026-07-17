@@ -69,12 +69,12 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
   const rateSeries = n >= 2 ? weightChangeRate(frame) : [];
   const aOf = (p, i) => (isRate ? (rateSeries[i] ? rateSeries[i].pctPerWeek : null) : defOf(p));
 
-  if (n < 2) {
+  if (n < 1) {
     return (
       <div>
         <RangeRow range={range} onRange={onRange} ranges={ranges} />
         <div style={{ color: C.faint, borderColor: C.line }} className="border border-dashed rounded-xl text-xs text-center py-10 mt-2">
-          Not enough logged data to chart yet — add a couple weeks of weigh-ins.
+          No logged data yet — log a weigh-in to start the timeline.
         </div>
       </div>
     );
@@ -100,7 +100,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
   const bY = linScale([bTicks[0], bTicks[bTicks.length - 1]], [bTop + bH, bTop]);
 
   const nLabels = Math.min(5, n);
-  const xLabels = Array.from({ length: nLabels }, (_, k) => Math.round((k / (nLabels - 1)) * (n - 1)));
+  const xLabels = Array.from({ length: nLabels }, (_, k) => (nLabels <= 1 ? 0 : Math.round((k / (nLabels - 1)) * (n - 1))));
   // show the year on long spans / when the window crosses a year boundary
   const showYear = frame[0].date.slice(0, 4) !== frame[n - 1].date.slice(0, 4) || diffDays(frame[0].date, frame[n - 1].date) > 300;
 
@@ -210,8 +210,8 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
         </svg>
 
         {hp && (
-          <div style={{ position: "absolute", top: 0, left: `${clamp((hover / (n - 1)) * 100, 0, 100)}%`,
-            transform: `translateX(${hover / (n - 1) > 0.6 ? "-105%" : "8px"})`, background: C.card, borderColor: C.line, pointerEvents: "none" }}
+          <div style={{ position: "absolute", top: 0, left: `${clamp(n <= 1 ? 0 : (hover / (n - 1)) * 100, 0, 100)}%`,
+            transform: `translateX(${(n > 1 && hover / (n - 1) > 0.6) ? "-105%" : "8px"})`, background: C.card, borderColor: C.line, pointerEvents: "none" }}
             className="border rounded-lg px-2 py-1.5 text-xs shadow-sm font-mono whitespace-nowrap">
             <div style={{ color: C.sub }} className="mb-0.5">{fmtDate(hp.date, showYear)}</div>
             <TipRow color={CHART.weight} label="weight" value={wOf(hp) != null ? `${r1(wOf(hp))} ${weightLabel(unit)}` : "—"} />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateExpenditure, WEIGH_METHODS, DEFAULT_METHOD } from "./expenditure.js";
+import { estimateExpenditure, floorSdKcal, WEIGH_METHODS, DEFAULT_METHOD } from "./expenditure.js";
 import { addDays } from "./series.js";
 
 // Build a synthetic history: constant daily intake, weight moving at the exact rate that
@@ -69,6 +69,37 @@ describe("robustness", () => {
     const i = Array.from({ length: 21 }, (_, d) => ({ date: addDays("2026-01-01", d), value: 200 }));
     const r = estimateExpenditure(w, i, { minDays: 10 });
     expect(r.sd).toBeGreaterThan(5); // a real band, not ~0
+  });
+});
+
+describe("floorSdKcal (displayed-uncertainty floor, day-zero honesty)", () => {
+  it("is wide at zero logged days — a real ±15% band on the prior, not ±0", () => {
+    const sd = floorSdKcal(0, 250);
+    expect(sd).toBeCloseTo((0.15 * 250) / 1.96, 6);
+    expect(1.96 * sd).toBeCloseTo(0.15 * 250, 6); // 95% band is ± 15% of the prior
+  });
+  it("decays monotonically as more days are logged", () => {
+    const sds = [0, 2, 4, 6, 8].map((n) => floorSdKcal(n, 250));
+    for (let i = 1; i < sds.length; i++) expect(sds[i]).toBeLessThan(sds[i - 1]);
+  });
+  it("is inactive (0) at and after the enoughData threshold", () => {
+    expect(floorSdKcal(10, 250)).toBe(0);
+    expect(floorSdKcal(11, 250)).toBe(0);
+    expect(floorSdKcal(1000, 250)).toBe(0);
+  });
+  it("respects a custom threshold/floorPct", () => {
+    expect(floorSdKcal(7, 250, { threshold: 7 })).toBe(0);
+    const wider = floorSdKcal(0, 250, { floorPct: 0.3 });
+    expect(wider).toBeCloseTo((0.3 * 250) / 1.96, 6);
+  });
+  it("never widens the ALREADY-enoughData band (callers use max(filterSd, floor), and floor is 0 there)", () => {
+    // sanity: at the threshold the floor can't out-compete any nonnegative filter sd
+    expect(Math.max(5, floorSdKcal(10, 250))).toBe(5);
+  });
+  it("degrades safely on bad inputs", () => {
+    expect(floorSdKcal(0, null)).toBe(0);
+    expect(floorSdKcal(0, 0)).toBe(0);
+    expect(floorSdKcal(-3, 250)).toBeCloseTo(floorSdKcal(0, 250), 6); // negative days clamps to 0
   });
 });
 

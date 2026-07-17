@@ -100,6 +100,25 @@ export function estimateExpenditure(weightEntries = [], intakeEntries = [], opts
   };
 }
 
+/* ==================== display-only uncertainty floor ==================== */
+// This does NOT touch any estimator's internal covariances/priors (qE, priorSdKcal, etc. —
+// those stay as tuned, and keep governing the actual filter math the convergence tests pin).
+// It's purely for what the page RENDERS before enoughData: with 0–1 weigh-ins the filters
+// haven't produced an sd at all (kcal/sd are null), and the vet formula being shown in their
+// place is itself only accurate to something like ±15% across the general cat population —
+// so a UI that displayed "no band" (or a falsely tight one) at day zero would be lying by
+// omission. floorSdKcal supplies a floor for the DISPLAYED sd only: full width
+// (±floorPct of the prior, at 95%) at zero logged days, linearly decaying to inactive (0) by
+// the time nDays reaches the enoughData threshold — at and after that point the filter's own
+// (already-converged, and typically already wider than this floor) sd stands on its own.
+export function floorSdKcal(nDays, priorKcal, { floorPct = 0.15, threshold = 10 } = {}) {
+  if (!(priorKcal > 0) || !(threshold > 0)) return 0;
+  const full = (floorPct * priorKcal) / 1.96; // sd whose 95% band is ± floorPct of the prior
+  const n = Math.max(0, Number(nDays) || 0);
+  if (n >= threshold) return 0;
+  return full * (1 - n / threshold);
+}
+
 /* ==================== v2: Kalman-filter estimator ==================== */
 // A 2-state Kalman filter over the same energy balance, state x = [W, E]:
 //   W_k = W_{k-1} + (I_k − E_{k-1})/ρ        (weight follows the energy balance)
