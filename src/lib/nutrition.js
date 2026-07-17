@@ -89,9 +89,3 @@ export function computeTargets(p) {
 }
 
 export const defaultFactors = { neutered: 1.2, intact: 1.4, kittenPeak: 2.5, moderation: 1.0, loss: 1.0, gain: 1.6 };
-
-export const seedProfile = {
-  name: "Mithril", dob: "2025-09-13", weightKg: 4.38, ageUnit: "months",
-  neutered: true, bcMode: "pct", bcs: 7, pctOver: 20, bcAsOf: null, goal: "gentle",
-  customTarget: "", gentleBasis: "current", factors: { ...defaultFactors },
-};

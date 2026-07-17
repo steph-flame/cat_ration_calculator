@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addCat, deleteCat, clearCatHistory, switchCat, renameCat, updateCatProfile, freshCatState, freshProfile, defaultExpSettings, resolveUnit } from "./catStore.js";
+import { addCat, deleteCat, clearCatHistory, switchCat, renameCat, updateCatProfile, freshCatState, freshProfile, defaultExpSettings, resolveUnit, DEMO_CAT_ID } from "./catStore.js";
 
 const stateWith = (ids) => ({
   activeCatId: ids[0],
@@ -64,15 +64,11 @@ describe("deleteCat", () => {
     expect(s1.activeCatId).toBe("b");
     expect(Object.keys(s1.cats).sort()).toEqual(["a", "b"]);
   });
-  it("replaces the last cat with a fresh blank one rather than leaving zero cats", () => {
+  it("switches active to Biscuit (the demo cat) rather than fabricating a fresh blank cat, when the last one is deleted", () => {
     const s0 = stateWith(["a"]);
     const s1 = deleteCat(s0, "a");
-    const ids = Object.keys(s1.cats);
-    expect(ids).toHaveLength(1);
-    expect(ids[0]).not.toBe("a");
-    expect(s1.activeCatId).toBe(ids[0]);
-    expect(s1.cats[ids[0]].profile.name).toBe("");
-    expect(s1.cats[ids[0]].weightLog).toEqual([]);
+    expect(Object.keys(s1.cats)).toEqual([]);
+    expect(s1.activeCatId).toBe(DEMO_CAT_ID);
   });
   it("no-ops gracefully deleting an id that isn't present (falls through the last-cat path only if truly empty)", () => {
     const s0 = stateWith(["a", "b"]);
@@ -98,6 +94,27 @@ describe("clearCatHistory", () => {
     const s1 = clearCatHistory(s0, "nope");
     expect(s1).toEqual(s0);
   });
+  it("is a no-op for Biscuit (the demo cat) — she's never a key in cats", () => {
+    const s0 = stateWith(["a"]);
+    expect(clearCatHistory(s0, DEMO_CAT_ID)).toEqual(s0);
+  });
+});
+
+describe("mutation seams no-op while Biscuit (the demo cat) is targeted", () => {
+  it("updateCatProfile is a no-op for DEMO_CAT_ID", () => {
+    const s0 = stateWith(["a"]);
+    expect(updateCatProfile(s0, DEMO_CAT_ID, { name: "Hacked" })).toEqual(s0);
+  });
+  it("deleteCat leaves real cats untouched when targeting DEMO_CAT_ID", () => {
+    const s0 = stateWith(["a", "b"]);
+    const s1 = deleteCat(s0, DEMO_CAT_ID);
+    expect(Object.keys(s1.cats).sort()).toEqual(["a", "b"]);
+    expect(s1.activeCatId).toBe(s0.activeCatId);
+  });
+  it("renameCat is a no-op for DEMO_CAT_ID", () => {
+    const s0 = stateWith(["a"]);
+    expect(renameCat(s0, DEMO_CAT_ID, "Hacked")).toBe(s0);
+  });
 });
 
 describe("switchCat", () => {
@@ -108,6 +125,12 @@ describe("switchCat", () => {
   it("no-ops for an id that doesn't exist", () => {
     const s0 = stateWith(["a", "b"]);
     expect(switchCat(s0, "nope")).toBe(s0);
+  });
+  it("switches to Biscuit (the demo cat) even though it's never a key in cats", () => {
+    const s0 = stateWith(["a", "b"]);
+    const s1 = switchCat(s0, DEMO_CAT_ID);
+    expect(s1.activeCatId).toBe(DEMO_CAT_ID);
+    expect(s1.cats).toBe(s0.cats); // untouched — demo is never stored
   });
 });
 

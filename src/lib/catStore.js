@@ -6,6 +6,11 @@ import { uid } from "./util.js";
 import { defaultFactors } from "./nutrition.js";
 import { blankFood } from "./foods.js";
 
+// Biscuit, the virtual demo cat (see lib/demoCat.js) — never a key in `cats`, never
+// persisted. Defined here (not in demoCat.js, which imports freshProfile/defaultTr/
+// defaultExpSettings from THIS module) so the two files don't import each other.
+export const DEMO_CAT_ID = "__demo__";
+
 export const defaultTr = () => ({ on: false, days: 7, timelineUnit: "g" });
 // weight unit used to live here (per-cat); it's now a shared top-level field (see AppState.jsx).
 export const defaultExpSettings = () => ({ pctPerWeek: 1, energyBasis: "formula", algo: "v3", direction: "auto", lastMethod: "petScale" });
@@ -47,14 +52,13 @@ export function addCat(state) {
   return { activeCatId: id, cats: { ...state.cats, [id]: freshCatState() } };
 }
 
-// Delete a cat. Deleting the last one replaces it with a fresh blank cat rather than
-// leaving zero cats — every page assumes an active cat exists.
+// Delete a cat. Deleting the last real one switches active to Biscuit (the virtual demo
+// cat) rather than fabricating a fresh blank real cat — a user who's just removed their
+// only cat sees the demo, exactly like a brand-new install, instead of a blank profile that
+// looks like data loss.
 export function deleteCat(state, id) {
   const remaining = Object.keys(state.cats).filter((k) => k !== id);
-  if (remaining.length === 0) {
-    const newId = uid();
-    return { activeCatId: newId, cats: { [newId]: freshCatState() } };
-  }
+  if (remaining.length === 0) return { activeCatId: DEMO_CAT_ID, cats: {} };
   const cats = { ...state.cats };
   delete cats[id];
   const activeCatId = state.activeCatId === id ? remaining[0] : state.activeCatId;
@@ -68,8 +72,11 @@ export function clearCatHistory(state, id) {
   return { ...state, cats: { ...state.cats, [id]: { ...state.cats[id], weightLog: [], intakeLog: [] } } };
 }
 
-// Switch the active cat; a no-op if the id doesn't exist.
+// Switch the active cat; a no-op if the id doesn't exist. Biscuit (DEMO_CAT_ID) is always a
+// valid target even though it's never a key in `cats` — it's generated on the fly (see
+// lib/demoCat.js), not stored.
 export function switchCat(state, id) {
+  if (id === DEMO_CAT_ID) return { ...state, activeCatId: DEMO_CAT_ID };
   return state.cats[id] ? { ...state, activeCatId: id } : state;
 }
 
