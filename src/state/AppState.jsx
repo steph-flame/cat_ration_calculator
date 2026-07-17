@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { num, r1, uid, clamp } from "../lib/util.js";
 import { applySkin, DEFAULT_SKIN, SKINS } from "../theme.js";
-import { computeTargets, seedProfile, bcsToPct, pctToBcs, ageMonthsFromDob, effectiveAgeMonths } from "../lib/nutrition.js";
+import { computeTargets, bcsToPct, pctToBcs, ageMonthsFromDob, effectiveAgeMonths } from "../lib/nutrition.js";
 import {
-  makeRationSeed, makeStartSeed, makeLibrarySeed, toLibraryEntry, dedupeFoods, stripKind, canonicalFoodName,
+  makeLibrarySeed, toLibraryEntry, dedupeFoods, stripKind, canonicalFoodName,
   migrateLegacyFood, ensureBuiltins, sumPct, blankFood, normalizePct, waterfall,
 } from "../lib/foods.js";
 import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure, WEIGH_SOURCES, DEFAULT_METHOD } from "../lib/expenditure.js";
@@ -12,8 +12,9 @@ import { usePersistence, store, probeStorage } from "../lib/storage.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
 import {
   addCat as addCatPure, deleteCat as deleteCatPure, clearCatHistory as clearCatHistoryPure, switchCat as switchCatPure,
-  updateCatProfile as updateCatProfilePure, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit,
+  updateCatProfile as updateCatProfilePure, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit, DEMO_CAT_ID,
 } from "../lib/catStore.js";
+import { buildDemoCat } from "../lib/demoCat.js";
 import { toV2, migrateV1 } from "../lib/migrate.js";
 import { login as lrLogin, listAllRobots as lrListAllRobots, syncWeights as lrSyncWeights, FIRST_SYNC_DAYS } from "../lib/litterRobot.js";
 
@@ -22,20 +23,11 @@ import { login as lrLogin, listAllRobots as lrListAllRobots, syncWeights as lrSy
 const cleanName = (f) => (f.name == null ? f : { ...f, name: stripKind(f.name) });
 const cleanFood = (f) => { const s = cleanName(f); return s.name == null ? s : migrateLegacyFood({ ...s, name: canonicalFoodName(s) }); };
 
-// A freshly-installed app shows one demo cat (Mithril) — the existing seed data, wrapped as
-// a cat. addCat()/deleteCat()'s replacement cat are deliberately NOT this: see freshCatState.
-const makeInitialCatsState = () => {
-  const id = uid();
-  return {
-    activeCatId: id,
-    cats: {
-      [id]: {
-        profile: seedProfile, ration: makeRationSeed(), start: makeStartSeed(),
-        weightLog: [], intakeLog: [], tr: defaultTr(), expSettings: defaultExpSettings(),
-      },
-    },
-  };
-};
+// A freshly-installed app has NO real cats at all — just Biscuit, the virtual demo cat (see
+// lib/demoCat.js), active by default. Biscuit is never a key in `cats`; it's generated on the
+// fly from `today` (see the demoCat useMemo below) and never persisted. addCat()/deleteCat()'s
+// replacement cat are a real, blank cat instead — see freshCatState.
+const makeInitialCatsState = () => ({ activeCatId: DEMO_CAT_ID, cats: {} });
 
 // Fill in a per-cat record from (possibly partial/imported) data, defaulting anything
 // missing and running the food cleanup on every food-shaped field.
@@ -71,8 +63,15 @@ export function AppProvider({ children }) {
   const [catsState, setCatsState] = useState(makeInitialCatsState);
   const library = useFoodLibrary(makeLibrarySeed);
   const [fridgeDays, setFridgeDays] = useState(3);
-  const [hydrated, setHydrated] = useState(false); // did we load real saved data (vs. seed defaults)?
   const [storageOk] = useState(probeStorage);
+  // Today's date, computed once per render — everything below (ages, the demo cat's
+  // generated history, "current weight") derives from this rather than a stored value, so
+  // none of it ever goes stale.
+  const today = new Date().toISOString().slice(0, 10);
+  // Biscuit, the virtual demo cat: regenerated whenever `today` changes (at most once a day),
+  // never stored. See lib/demoCat.js for the generator and AppState's module banner above for
+  // why it's never a key in `catsState.cats`.
+  const demoCat = useMemo(() => buildDemoCat(today), [today]);
   // Appearance skin: shared across every cat (like fridgeDays), not per-cat data. Defaults
   // to "original" and is tolerant of missing/unknown values on load/import (see hydrate,
   // importData) — an older export simply keeps whatever's already active.
@@ -88,20 +87,31 @@ export function AppProvider({ children }) {
   // weightLog it feeds. Null = not connected. Never stores the password, only this token.
   const [litterRobot, setLitterRobotState] = useState(null);
 
-  const activeCat = catsState.cats[catsState.activeCatId];
-  const updateActiveCat = (fn) =>
+  // Biscuit is never a key in `cats` — it's generated above, not stored — so the active cat
+  // is either that generated stand-in or a real lookup into `cats`.
+  const activeCat = catsState.activeCatId === DEMO_CAT_ID ? demoCat : catsState.cats[catsState.activeCatId];
+  // The ONE seam every per-cat mutation (profile edits, ration/start, weigh-ins, intake, tr,
+  // expSettings — see setP/makeListView/makeLogView/setTr/setExpSettings below) funnels
+  // through. No-op while Biscuit is active: her data is regenerated fresh every time, so any
+  // "edit" would just be silently discarded on the next render anyway — this makes that
+  // explicit instead of writing a `cats[DEMO_CAT_ID]` entry into real state.
+  const updateActiveCat = (fn) => {
+    if (catsState.activeCatId === DEMO_CAT_ID) return;
     setCatsState((s) => ({ ...s, cats: { ...s.cats, [s.activeCatId]: fn(s.cats[s.activeCatId]) } }));
+  };
 
   // Load: the stored blob is our own — always a whole snapshot (v1 legacy or v2). Migrate
   // v1 → v2 (see lib/migrate.js) then adopt it wholesale.
   const hydrate = (raw) => {
     if (!raw || typeof raw !== "object") return;
-    setHydrated(true);
     const d = toV2(raw);
     const cats = catsFromV2(d);
     let activeCatId;
     if (Object.keys(cats).length) {
-      activeCatId = d.activeCatId && cats[d.activeCatId] ? d.activeCatId : Object.keys(cats)[0];
+      // A persisted activeCatId of DEMO_CAT_ID is tolerated even though Biscuit is never a
+      // key in `cats` — she stays active rather than silently falling back to a real cat.
+      activeCatId = d.activeCatId === DEMO_CAT_ID ? DEMO_CAT_ID
+        : d.activeCatId && cats[d.activeCatId] ? d.activeCatId : Object.keys(cats)[0];
       setCatsState({ activeCatId, cats });
     }
     if (d.library) library.setFoods(dedupeFoods(ensureBuiltins(d.library.map(cleanFood))));
@@ -119,12 +129,12 @@ export function AppProvider({ children }) {
   // change if the file actually has them, so an old/partial file can't blank out the library.
   const importData = (raw) => {
     if (!raw || typeof raw !== "object") return;
-    setHydrated(true);
     let newActiveCat; // the cat that becomes active by this import, if any — for the unit fallback below
     if (raw.v === 2) {
       const cats = catsFromV2(raw);
       if (Object.keys(cats).length) {
-        const activeCatId = raw.activeCatId && cats[raw.activeCatId] ? raw.activeCatId : Object.keys(cats)[0];
+        const activeCatId = raw.activeCatId === DEMO_CAT_ID ? DEMO_CAT_ID
+          : raw.activeCatId && cats[raw.activeCatId] ? raw.activeCatId : Object.keys(cats)[0];
         setCatsState({ activeCatId, cats });
         newActiveCat = cats[activeCatId];
       }
@@ -148,7 +158,6 @@ export function AppProvider({ children }) {
 
   const persistData = { v: 2, activeCatId: catsState.activeCatId, cats: catsState.cats, library: library.foods, fridgeDays, skin, unit, litterRobot };
   const loaded = usePersistence(persistData, hydrate);
-  const firstRun = loaded && !hydrated; // showing seed defaults, no saved data yet
 
   // Foods enter the library only on an explicit save click (see saveFood) — never
   // automatically, so typing a food doesn't silently accumulate library entries.
@@ -202,8 +211,8 @@ export function AppProvider({ children }) {
   // newborn — see effectiveAgeMonths) and dobMissing tells the UI to prompt for it instead
   // of showing a made-up age. The current weight the feeding math runs on is the latest
   // weigh-in — not a hand-typed number that can silently disagree with the log — falling
-  // back to the seeded profile weight before the first weigh-in.
-  const today = new Date().toISOString().slice(0, 10);
+  // back to the seeded profile weight before the first weigh-in. (`today` itself is computed
+  // once at the top of this provider — see the demoCat useMemo above.)
   const dobMissing = ageMonthsFromDob(p.dob, today) == null;
   const effAgeMonths = effectiveAgeMonths(p.dob, today);
   const weightDays = groupByDay(weightLog.items); // newest day first
@@ -231,10 +240,14 @@ export function AppProvider({ children }) {
   const setBcs = (v) => setP((s) => ({ ...s, bcs: v, pctOver: bcsToPct(v), bcAsOf: today }));
   const setPct = (v) => { const cv = clamp(num(v), -60, 100); setP((s) => ({ ...s, pctOver: cv, bcs: pctToBcs(cv), bcAsOf: today })); }; // clamp: a wild % → absurd ideal weight → overfeed
 
-  // One row per cat for the Settings "Cats" list / header switcher: id, display name (or
-  // blank — callers show "unnamed cat"), a formatted age (or null — "age unknown"), the raw
-  // dob/neutered (for Settings' profile editor), and how many weigh-ins it has logged.
-  const catsSummary = Object.entries(catsState.cats).map(([id, cat]) => {
+  // One row per cat for the Cats page list / header switcher: id, display name (or blank —
+  // callers show "unnamed cat"), a formatted age (or null — "age unknown"), the raw
+  // dob/neutered (for the Cats page's profile editor), and how many weigh-ins/meals it has
+  // logged. Biscuit (the virtual demo cat) is always appended last, flagged `demo: true` so
+  // callers can single her out (no controls on the Cats page, excluded from the Litter-Robot
+  // target-cat picker) — she's never a key in `catsState.cats`, so she can't come from the
+  // Object.entries below; she's added on afterward instead.
+  const catRow = (id, cat) => {
     const months = ageMonthsFromDob(cat.profile?.dob, today);
     const unit = cat.profile?.ageUnit || "months";
     return {
@@ -244,9 +257,14 @@ export function AppProvider({ children }) {
       neutered: !!cat.profile?.neutered,
       ageDisplay: months == null ? null : unit === "years" ? `${r1(months / 12)} yr` : `${r1(months)} mo`,
       weighIns: (cat.weightLog || []).length,
+      meals: (cat.intakeLog || []).length,
       active: id === catsState.activeCatId,
     };
-  });
+  };
+  const catsSummary = [
+    ...Object.entries(catsState.cats).map(([id, cat]) => catRow(id, cat)),
+    { ...catRow(DEMO_CAT_ID, demoCat), name: "Biscuit", demo: true },
+  ];
   const switchCat = (id) => setCatsState((s) => switchCatPure(s, id));
   const addCat = () => setCatsState((s) => addCatPure(s));
   const deleteCat = (id) => setCatsState((s) => deleteCatPure(s, id));
@@ -254,9 +272,9 @@ export function AppProvider({ children }) {
   const updateCatProfile = (id, patch) => setCatsState((s) => updateCatProfilePure(s, id, patch));
 
   // Global "erase all" — wipes every cat, the saved-food library, and fridgeDays back to a
-  // single fresh blank cat + the built-in food list. Not the seed demo cat: a user who's
-  // deliberately erasing everything on a deployed app shouldn't have a stranger's example
-  // cat (Mithril) resurface.
+  // single fresh blank cat + the built-in food list. Not Biscuit: a user who's deliberately
+  // erasing everything gets an actually-blank cat, not the demo resurfacing as if nothing
+  // happened.
   const eraseAll = () => {
     store.clear();
     const id = uid();
@@ -335,7 +353,7 @@ export function AppProvider({ children }) {
   }, [loaded]);
 
   const value = {
-    loaded, firstRun, storageOk, p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct,
+    loaded, storageOk, p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct,
     today, currentWeight, logWeight,
     ration, start, library, weightLog, intakeLog, saveFood,
     tr, setTr, fridgeDays, setFridgeDays, expSettings, setExpSettings,

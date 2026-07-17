@@ -4,14 +4,16 @@ import { C } from "./theme.js";
 import { AppProvider, useApp } from "./state/AppState.jsx";
 import { useHashRoute } from "./hooks/useHashRoute.js";
 import { platformInstallHint, isStandalone, isBannerDismissed, dismissBanner } from "./lib/pwa.js";
+import { DEMO_CAT_ID } from "./lib/demoCat.js";
 import CatMenu from "./components/CatMenu.jsx";
 import Home from "./pages/Home.jsx";
 import RationPlanner from "./pages/RationPlanner.jsx";
 import Expenditure from "./pages/Expenditure.jsx";
 import Log from "./pages/Log.jsx";
+import Cats from "./pages/Cats.jsx";
 import Settings from "./pages/Settings.jsx";
 
-const PAGES = { home: Home, ration: RationPlanner, expenditure: Expenditure, log: Log, settings: Settings };
+const PAGES = { home: Home, ration: RationPlanner, expenditure: Expenditure, log: Log, cats: Cats, settings: Settings };
 
 // Compact app-shell header: a settings link, plus the cat switcher — dense to match the rest
 // of the chrome (banners, nav rows). Always shown, even with one cat: "+ add a cat" needs to
@@ -57,21 +59,22 @@ const INSTALL_NUDGE_COPY = {
 };
 
 function Router() {
-  const { loaded, firstRun, storageOk, catsSummary, activeCatId, switchCat, addCat } = useApp();
+  const { loaded, storageOk, catsSummary, activeCatId, switchCat, addCat } = useApp();
   const route = useHashRoute("home");
-  const [introClosed, setIntroClosed] = useState(false);
+  const [demoBannerClosed, setDemoBannerClosed] = useState(false);
   const [installNudgeClosed, setInstallNudgeClosed] = useState(false);
   if (!loaded) return <div style={{ background: C.paper, minHeight: "100%" }} className="w-full" />;
   const Page = PAGES[route] || Home;
   const installPlatform = installNudgePlatform();
+  const isDemo = activeCatId === DEMO_CAT_ID;
   return (
     <>
       <Header catsSummary={catsSummary} activeCatId={activeCatId} switchCat={switchCat} addCat={addCat} />
       {!storageOk && (
         <Banner tone="warn">This browser isn't letting the app save (private mode?). Changes won't persist — use Export in Settings to keep your data.</Banner>
       )}
-      {firstRun && !introClosed && (
-        <Banner onClose={() => setIntroClosed(true)}>Showing example data (a sample cat). Set the cat's profile in Settings and log a weigh-in on the ration planner to make it yours — or head to Settings to start fresh or add another cat.</Banner>
+      {isDemo && !demoBannerClosed && (
+        <Banner onClose={() => setDemoBannerClosed(true)}>You're looking at Biscuit, the demo cat — everything here is sample data. Add your own cat from the name menu ↑.</Banner>
       )}
       {!installNudgeClosed && installPlatform && (
         <Banner onClose={() => { dismissBanner(); setInstallNudgeClosed(true); }}>

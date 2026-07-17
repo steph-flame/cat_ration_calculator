@@ -23,7 +23,7 @@ export default function CatMenu({ catsSummary, activeCatId, switchCat, addCat, v
   }, [open]);
 
   const pick = (id) => { switchCat(id); setOpen(false); };
-  const addAndEdit = () => { addCat(); setOpen(false); window.location.hash = "#/ration"; };
+  const addAndEdit = () => { addCat(); setOpen(false); window.location.hash = "#/cats"; };
 
   return (
     <span ref={wrapRef} className="relative inline-block">
@@ -47,7 +47,7 @@ export default function CatMenu({ catsSummary, activeCatId, switchCat, addCat, v
             <button key={c.id} role="menuitem" onClick={() => pick(c.id)}
               style={{ color: c.id === activeCatId ? C.spruce : C.ink }}
               className="w-full text-left px-3 py-1.5 text-sm flex items-center justify-between gap-2 hover:bg-black/[0.03]">
-              <span className="truncate">{c.name || "unnamed cat"}</span>
+              <span className="truncate">{c.name || "unnamed cat"}{c.demo && <span style={{ color: C.faint }} className="text-xs"> · demo</span>}</span>
               {c.id === activeCatId && <Check size={13} className="shrink-0" />}
             </button>
           ))}
