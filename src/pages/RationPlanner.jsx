@@ -112,7 +112,7 @@ export default function RationPlanner() {
               <span className="font-mono text-xs">{ageDisplay} {ageUnit === "years" ? "yr" : "mo"}</span>
             )}
             <span style={{ color: C.faint }}>·</span>
-            <span className="text-xs">{p.neutered ? "spayed" : "intact"}</span>
+            <span className="text-xs">{p.neutered ? "spayed/neutered" : "intact"}</span>
           </div>
 
           {/* current state — read from the weight log */}

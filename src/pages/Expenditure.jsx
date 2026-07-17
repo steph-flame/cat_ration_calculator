@@ -146,7 +146,7 @@ export default function Expenditure() {
             <>
               <TimelineChart frame={frame} range={range} onRange={setRange} ranges={RANGES} unit={unit} analysisMode={analysis === "none" ? null : analysis} />
               <div className="flex items-center justify-between mt-2 gap-3">
-                <p style={{ color: C.faint }} className="text-xs leading-snug flex-1">Where <span style={{ color: CHART.intake }}>calories in</span> sits below <span style={{ color: CHART.expenditure }}>expenditure</span>, she's in a deficit and the weight above trends down. Shaded = 95% confidence{!e.enoughData && " (wide until ~2 weeks of logs)"}.</p>
+                <p style={{ color: C.faint }} className="text-xs leading-snug flex-1">Where <span style={{ color: CHART.intake }}>calories in</span> sits below <span style={{ color: CHART.expenditure }}>expenditure</span>, the cat runs a deficit and the weight above trends down. Shaded = 95% confidence{!e.enoughData && " (wide until ~2 weeks of logs)"}.</p>
                 <div className="flex items-center gap-1 shrink-0">
                   {analysis !== "none" && (
                     <div className="flex rounded-full overflow-hidden border" style={{ borderColor: C.line }}>
