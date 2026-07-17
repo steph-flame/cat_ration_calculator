@@ -100,14 +100,14 @@ export default function RationPlanner() {
         <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
           <div className="flex items-baseline justify-between mb-1">
             <h2 className="font-medium">The cat</h2>
-            <a href="#/settings" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2">edit profile →</a>
+            <a href="#/cats" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2">edit profile →</a>
           </div>
-          {/* permanent attributes now live in Settings — this is a read-only identity line */}
+          {/* permanent attributes now live on the Cats page — this is a read-only identity line */}
           <div style={{ color: C.sub }} className="flex items-center gap-1.5 flex-wrap text-sm mb-4">
             <span style={{ color: C.ink }} className="font-medium">{p.name || "unnamed cat"}</span>
             <span style={{ color: C.faint }}>·</span>
             {dobMissing ? (
-              <a href="#/settings" style={{ color: C.warn }} className="text-xs underline decoration-dotted underline-offset-2">age unknown — set date of birth in settings →</a>
+              <a href="#/cats" style={{ color: C.warn }} className="text-xs underline decoration-dotted underline-offset-2">age unknown — set date of birth in cats →</a>
             ) : (
               <span className="font-mono text-xs">{ageDisplay} {ageUnit === "years" ? "yr" : "mo"}</span>
             )}

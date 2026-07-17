@@ -1,4 +1,4 @@
-import { Scale, Activity, NotebookPen, ChevronRight, Settings as SettingsIcon } from "lucide-react";
+import { Scale, Activity, NotebookPen, ChevronRight, Settings as SettingsIcon, Cat as CatIcon } from "lucide-react";
 import { C } from "../theme.js";
 import { useApp } from "../state/AppState.jsx";
 import { r0, r1, clamp } from "../lib/util.js";
@@ -118,8 +118,9 @@ export default function Home() {
           {tools.map((tool) => <ToolRow key={tool.href} {...tool} />)}
         </div>
 
-        <div className="flex items-center gap-2 mt-6">
-          <a href="#/settings" style={{ borderColor: C.line, color: C.sub }} className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-white"><SettingsIcon size={13} /> Settings — cats, appearance, export/import</a>
+        <div className="flex items-center gap-2 mt-6 flex-wrap">
+          <a href="#/cats" style={{ borderColor: C.line, color: C.sub }} className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-white"><CatIcon size={13} /> Cats — profiles, ages, history</a>
+          <a href="#/settings" style={{ borderColor: C.line, color: C.sub }} className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-white"><SettingsIcon size={13} /> Settings — appearance, export/import</a>
         </div>
         <p style={{ color: C.faint }} className="text-xs leading-relaxed mt-3 px-1">
           A planning aid, not veterinary advice. Saved on this device only — Export from Settings to back up or move to another browser.

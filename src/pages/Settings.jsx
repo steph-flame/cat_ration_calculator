@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronDown, Settings as SettingsIcon, Plus, Download, Upload, AlertTriangle, Trash2, RotateCcw, Check, Link2, Unlink, RefreshCw, Loader2, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { ChevronLeft, ChevronRight, ChevronDown, Settings as SettingsIcon, Download, Upload, AlertTriangle, Trash2, Check, Link2, Unlink, RefreshCw, Loader2, ShieldCheck } from "lucide-react";
 import { C, SKINS } from "../theme.js";
 import { useApp } from "../state/AppState.jsx";
 import { validateImport } from "../lib/validate.js";
 import { platformInstallHint, isStandalone } from "../lib/pwa.js";
 import { FIRST_SYNC_DAYS, LR5_WEIGHT_SCALES } from "../lib/litterRobot.js";
-import { Field, Toggle, Note } from "../components/primitives.jsx";
+import { Field, Note } from "../components/primitives.jsx";
 import CatMark from "../components/CatMark.jsx";
 
-const catLabel = (c) => c.name || "unnamed cat";
 const SKIN_NAMES = { original: "Original", blossom: "Blossom", tidepool: "Tidepool", spruce: "Spruce" };
 // LR5's petWeight unit isn't confirmed in source (see lib/litterRobot.js) — surfaced here so
 // whichever interpretation the plausibility check settled on is visible, not just inferred.
@@ -28,16 +27,19 @@ const INSTALL_GESTURES = [
 
 export default function Settings() {
   const {
-    p, today, catsSummary, activeCatId, switchCat, addCat, updateCatProfile, deleteCat, clearCatHistory, eraseAll,
+    p, catsSummary, activeCatId, eraseAll,
     fridgeDays, exportData, importData, skin, setSkin, unit, setUnit,
     litterRobot, connectLitterRobotStart, connectLitterRobotFinish, disconnectLitterRobot, syncLitterRobotNow,
   } = useApp();
-  const [expandedId, setExpandedId] = useState(null);
   const [installExpanded, setInstallExpanded] = useState(false);
   const installed = isStandalone();
   const platform = typeof navigator !== "undefined" ? platformInstallHint(navigator.userAgent, navigator.maxTouchPoints) : "other";
   const detectedGesture = INSTALL_GESTURES.find((g) => g.key === platform);
   const otherGestures = INSTALL_GESTURES.filter((g) => g.key !== platform);
+  // Litter-Robot's target-cat picker: real cats only — Biscuit (the demo cat) can't take a
+  // weight feed, since her data is regenerated fresh every load, not stored.
+  const realCats = catsSummary.filter((c) => !c.demo);
+  const realActiveCatId = realCats.some((c) => c.id === activeCatId) ? activeCatId : realCats[0]?.id;
 
   const doExport = () => {
     const blob = new Blob([exportData()], { type: "application/json" });
@@ -60,13 +62,6 @@ export default function Settings() {
     reader.readAsText(file);
   };
 
-  const clearHistory = (c) => {
-    if (window.confirm(`Erase ${catLabel(c)}'s weigh-in and intake history? Profile, ration, and saved foods stay. This can't be undone.`)) clearCatHistory(c.id);
-  };
-  const removeCat = (c) => {
-    const tail = catsSummary.length === 1 ? " Since every cat needs a home, this one is replaced with a fresh blank cat." : "";
-    if (window.confirm(`Delete ${catLabel(c)} — profile, ration, and all weigh-in/intake history? This can't be undone.${tail}`)) deleteCat(c.id);
-  };
   const doEraseAll = () => {
     if (window.confirm("Erase everything — every cat's profile, all saved foods, and all weigh-in and intake history? This can't be undone.")) eraseAll();
   };
@@ -143,53 +138,27 @@ export default function Settings() {
           )}
         </section>
 
-        {/* litter-robot */}
+        {/* litter-robot — real cats only in the target-cat picker; Biscuit (the demo cat)
+            can't take a weight feed since her data is regenerated fresh every load */}
         <LitterRobotCard
           connection={litterRobot}
-          catsSummary={catsSummary}
-          activeCatId={activeCatId}
+          catsSummary={realCats}
+          activeCatId={realActiveCatId}
           connectStart={connectLitterRobotStart}
           connectFinish={connectLitterRobotFinish}
           disconnect={disconnectLitterRobot}
           syncNow={syncLitterRobotNow}
         />
 
-        {/* cats */}
+        {/* cats — profiles, ages, per-cat history now live on their own page */}
         <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
-          <h2 className="font-medium mb-1">Cats</h2>
-          <p style={{ color: C.faint }} className="text-xs mb-3">Every cat gets its own profile, ration, and history. They share one food library and fridge setting ({fridgeDays} day{fridgeDays === 1 ? "" : "s"}).</p>
-          <div className="space-y-1.5">
-            {catsSummary.map((c) => {
-              const expanded = c.id === expandedId;
-              return (
-                <div key={c.id} style={{ borderColor: c.id === activeCatId ? C.spruce : C.line, background: c.id === activeCatId ? C.spruceSoft : "transparent" }}
-                  className="border rounded-xl overflow-hidden">
-                  <div className="flex items-center gap-3 px-3 py-2">
-                    <input type="radio" name="activeCat" checked={c.id === activeCatId} onChange={() => switchCat(c.id)} style={{ accentColor: C.spruce }} aria-label={`Make ${catLabel(c)} the active cat`} />
-                    <div className="flex-1 min-w-0">
-                      <CatNameField cat={c} onChange={(name) => updateCatProfile(c.id, { name })} active={c.id === activeCatId} />
-                      <div style={{ color: C.faint }} className="text-xs font-mono mt-0.5">{c.ageDisplay || "age unknown"} · {c.weighIns} weigh-in{c.weighIns === 1 ? "" : "s"}</div>
-                    </div>
-                    <button onClick={() => setExpandedId(expanded ? null : c.id)} aria-expanded={expanded} style={{ color: C.sub }} className="shrink-0 inline-flex items-center gap-0.5 text-xs hover:underline">
-                      profile {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </button>
-                  </div>
-                  {expanded && (
-                    <div style={{ borderColor: C.line }} className="border-t px-3 py-3 space-y-3">
-                      <Field label="Date of birth">
-                        <input type="date" value={c.dob} max={today} onChange={(e) => updateCatProfile(c.id, { dob: e.target.value })} className="w-full bg-transparent outline-none font-mono text-sm tabular-nums" style={{ color: C.ink }} aria-label={`${catLabel(c)}'s date of birth`} />
-                      </Field>
-                      <div className="flex items-center gap-2">
-                        <span style={{ color: C.sub }} className="text-xs w-28">Spayed / neutered</span>
-                        <Toggle value={c.neutered} onChange={(v) => updateCatProfile(c.id, { neutered: v })} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="font-medium mb-1">Cats</h2>
+              <p style={{ color: C.faint }} className="text-xs">Profiles, ages, weigh-in counts, and per-cat history — switch cats, rename, or manage history there.</p>
+            </div>
+            <a href="#/cats" style={{ color: C.spruce }} className="text-xs font-mono underline decoration-dotted underline-offset-2 shrink-0">Cats →</a>
           </div>
-          <button onClick={addCat} style={{ borderColor: C.line, color: C.spruce }} className="mt-3 w-full border border-dashed rounded-xl py-2.5 text-sm inline-flex items-center justify-center gap-1.5 hover:bg-white"><Plus size={15} /> add a cat</button>
         </section>
 
         {/* data */}
@@ -205,48 +174,15 @@ export default function Settings() {
           </div>
         </section>
 
-        {/* danger zone */}
+        {/* danger zone — per-cat clear/delete now live on the Cats page; this is only the
+            global wipe */}
         <section style={{ background: C.warnSoft, borderColor: C.warn }} className="border-2 rounded-2xl p-4 sm:p-5 mb-4">
           <h2 style={{ color: C.warn }} className="font-medium mb-1 flex items-center gap-1.5"><AlertTriangle size={16} /> Danger zone</h2>
-          <p style={{ color: C.warn }} className="text-xs mb-3 opacity-90">Every action here is permanent — there's no undo, and each button says exactly what it erases.</p>
-
-          <div className="space-y-1.5">
-            {catsSummary.map((c) => (
-              <div key={c.id} style={{ borderColor: C.warn }} className="flex items-center justify-between gap-2 border rounded-xl px-3 py-2 bg-white/40">
-                <span className="text-sm truncate" style={{ color: C.ink }}>{catLabel(c)}</span>
-                <span className="flex items-center gap-1.5 shrink-0">
-                  <button onClick={() => clearHistory(c)} style={{ borderColor: C.warn, color: C.warn }} className="inline-flex items-center gap-1 text-xs border rounded-lg px-2 py-1 hover:bg-white"><RotateCcw size={11} /> clear history…</button>
-                  <button onClick={() => removeCat(c)} style={{ borderColor: C.warn, color: C.warn }} className="inline-flex items-center gap-1 text-xs border rounded-lg px-2 py-1 hover:bg-white"><Trash2 size={11} /> delete cat…</button>
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ borderColor: C.warn }} className="mt-4 border-t pt-3">
-            <button onClick={doEraseAll} style={{ background: C.warn }} className="w-full rounded-xl py-2.5 text-sm text-white inline-flex items-center justify-center gap-1.5"><Trash2 size={14} /> erase all — every cat, every food, all history…</button>
-          </div>
+          <p style={{ color: C.warn }} className="text-xs mb-3 opacity-90">Permanent — there's no undo. Looking to clear or delete just one cat? That's on the <a href="#/cats" style={{ color: C.warn }} className="underline">Cats page</a>.</p>
+          <button onClick={doEraseAll} style={{ background: C.warn }} className="w-full rounded-xl py-2.5 text-sm text-white inline-flex items-center justify-center gap-1.5"><Trash2 size={14} /> erase all — every cat, every food, all history…</button>
         </section>
       </div>
     </div>
-  );
-}
-
-// Inline-editable cat name, scoped to whichever row it's rendered in (not just the active
-// cat). Local `value` state — rather than the row's own (trimmed, for display) catsSummary
-// name — is the controlled source, so a trailing space mid-word doesn't get stripped out
-// from under the cursor on every keystroke; it only resyncs when the row's cat id changes.
-function CatNameField({ cat, onChange, active }) {
-  const [value, setValue] = useState(cat.name);
-  useEffect(() => { setValue(cat.name); }, [cat.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  return (
-    <input
-      type="text" value={value} placeholder="unnamed cat"
-      onChange={(e) => { setValue(e.target.value); onChange(e.target.value); }}
-      autoComplete="off" data-lpignore="true" data-1p-ignore data-form-type="other"
-      aria-label={`${catLabel(cat)}'s name`}
-      style={{ color: active ? C.spruce : C.ink }}
-      className="w-full bg-transparent outline-none text-sm font-medium border-b border-transparent focus:border-current"
-    />
   );
 }
 
