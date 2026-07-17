@@ -5,8 +5,8 @@ import { r0, r1, clamp } from "../lib/util.js";
 import { toDisplayWeight, weightLabel, weeklyRate } from "../lib/units.js";
 import { resolveTarget } from "../lib/targeting.js";
 import { RATE } from "../lib/weightPlan.js";
-import { nextCatId } from "../lib/catStore.js";
 import CatMark from "../components/CatMark.jsx";
+import CatMenu from "../components/CatMenu.jsx";
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -20,7 +20,7 @@ const greeting = () => {
 // Every tile degrades honestly — first-run demo, no weigh-ins yet, a growing kitten, or not
 // enough data for a measured estimate all get their own truthful copy, never a guessed number.
 export default function Home() {
-  const { p, t, expenditure, weightLog, intakeLog, expSettings, currentWeight, ration, unit, catsSummary, activeCatId, switchCat } = useApp();
+  const { p, t, expenditure, weightLog, intakeLog, expSettings, currentWeight, ration, unit, catsSummary, activeCatId, switchCat, addCat } = useApp();
   const wLbl = weightLabel(unit);
   const showW = (kg, d = 1) => `${(d === 1 ? r1 : r0)(toDisplayWeight(kg, unit))} ${wLbl}`;
   const name = p.name || "Your cat";
@@ -40,8 +40,8 @@ export default function Home() {
 
   // Masthead headline + one-line status — every branch reads only real, already-computed
   // values (currentWeight, expenditure, t), never a fabricated number. The name always leads
-  // the headline, so `headlineTail` is just what follows it — see <CatName> below for the
-  // one place that turns the name into a cat-switcher when there's more than one cat.
+  // the headline, so `headlineTail` is just what follows it — the name itself is a CatMenu
+  // trigger (see below), always a switcher regardless of how many cats exist.
   let headlineTail, sub;
   if (!hasWeighIns) {
     headlineTail = "'s kitchen";
@@ -84,7 +84,7 @@ export default function Home() {
           <div className="min-w-0">
             <div style={{ color: C.amber }} className="font-mono text-[10.5px] tracking-[0.2em] uppercase">{greeting()}</div>
             <h1 className="text-[28px] sm:text-[32px] font-extrabold leading-tight mt-0.5" style={{ letterSpacing: "-0.02em" }}>
-              <CatName name={name} catsSummary={catsSummary} activeCatId={activeCatId} switchCat={switchCat} />{headlineTail}
+              <CatMenu variant="headline" catsSummary={catsSummary} activeCatId={activeCatId} switchCat={switchCat} addCat={addCat} />{headlineTail}
             </h1>
             <p style={{ color: C.sub }} className="text-[15px] mt-0.5 leading-snug">{sub}</p>
           </div>
@@ -126,21 +126,6 @@ export default function Home() {
         </p>
       </div>
     </div>
-  );
-}
-
-// The cat's name inside the masthead headline. With 2+ cats it's a tappable control (same
-// cycle-to-next behavior as the app-shell header switcher, see catStore.nextCatId) with a ▾
-// affordance so it reads interactive; with just one cat it's plain text. One wrap point for
-// every headline variant, rather than each branch rolling its own.
-function CatName({ name, catsSummary, activeCatId, switchCat }) {
-  if (catsSummary.length <= 1) return name;
-  const cycle = () => switchCat(nextCatId(catsSummary, activeCatId));
-  return (
-    <button onClick={cycle} aria-label={`Switch cat (current: ${name})`}
-      style={{ color: C.spruce, font: "inherit", letterSpacing: "inherit" }} className="align-baseline">
-      {name}<span style={{ color: C.faint }} className="text-[0.7em] align-middle"> ▾</span>
-    </button>
   );
 }
 

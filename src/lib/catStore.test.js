@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addCat, deleteCat, clearCatHistory, switchCat, freshCatState, freshProfile, defaultExpSettings, nextCatId, resolveUnit } from "./catStore.js";
+import { addCat, deleteCat, clearCatHistory, switchCat, renameCat, freshCatState, freshProfile, defaultExpSettings, resolveUnit } from "./catStore.js";
 
 const stateWith = (ids) => ({
   activeCatId: ids[0],
@@ -117,14 +117,29 @@ describe("defaultExpSettings", () => {
   });
 });
 
-describe("nextCatId", () => {
-  const summary = (ids) => ids.map((id) => ({ id }));
-  it("cycles to the next cat in order", () => {
-    expect(nextCatId(summary(["a", "b", "c"]), "a")).toBe("b");
-    expect(nextCatId(summary(["a", "b", "c"]), "b")).toBe("c");
+describe("renameCat", () => {
+  it("renames the given cat, leaving other cats untouched (same reference)", () => {
+    const s0 = stateWith(["a", "b"]);
+    const s1 = renameCat(s0, "a", "Mochi");
+    expect(s1.cats.a.profile.name).toBe("Mochi");
+    expect(s1.cats.b).toBe(s0.cats.b);
   });
-  it("wraps from the last cat back to the first", () => {
-    expect(nextCatId(summary(["a", "b", "c"]), "c")).toBe("a");
+  it("renames a cat that isn't the active one", () => {
+    const s0 = { ...stateWith(["a", "b"]), activeCatId: "a" };
+    const s1 = renameCat(s0, "b", "Biscuit");
+    expect(s1.cats.b.profile.name).toBe("Biscuit");
+    expect(s1.activeCatId).toBe("a");
+  });
+  it("leaves the rest of the profile untouched", () => {
+    const s0 = stateWith(["a"]);
+    const s1 = renameCat(s0, "a", "Mochi");
+    expect(s1.cats.a.profile.goal).toBe(s0.cats.a.profile.goal);
+    expect(s1.cats.a.profile.dob).toBe(s0.cats.a.profile.dob);
+  });
+  it("is a no-op for an id that doesn't exist", () => {
+    const s0 = stateWith(["a"]);
+    const s1 = renameCat(s0, "nope", "Mochi");
+    expect(s1).toBe(s0);
   });
 });
 

@@ -1,4 +1,5 @@
-import { ChevronLeft, Settings as SettingsIcon, Plus, Download, Upload, AlertTriangle, Trash2, RotateCcw, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Settings as SettingsIcon, Plus, Download, Upload, AlertTriangle, Trash2, RotateCcw, Check } from "lucide-react";
 import { C, SKINS } from "../theme.js";
 import { useApp } from "../state/AppState.jsx";
 import { validateImport } from "../lib/validate.js";
@@ -8,7 +9,7 @@ const catLabel = (c) => c.name || "unnamed cat";
 const SKIN_NAMES = { original: "Original", blossom: "Blossom", tidepool: "Tidepool", spruce: "Spruce" };
 
 export default function Settings() {
-  const { p, catsSummary, activeCatId, switchCat, addCat, deleteCat, clearCatHistory, eraseAll, fridgeDays, exportData, importData, skin, setSkin, unit, setUnit } = useApp();
+  const { p, catsSummary, activeCatId, switchCat, addCat, renameCat, deleteCat, clearCatHistory, eraseAll, fridgeDays, exportData, importData, skin, setSkin, unit, setUnit } = useApp();
 
   const doExport = () => {
     const blob = new Blob([exportData()], { type: "application/json" });
@@ -34,6 +35,7 @@ export default function Settings() {
   const clearHistory = (c) => {
     if (window.confirm(`Erase ${catLabel(c)}'s weigh-in and intake history? Profile, ration, and saved foods stay. This can't be undone.`)) clearCatHistory(c.id);
   };
+  const goToProfile = (id) => { switchCat(id); window.location.hash = "#/ration"; };
   const removeCat = (c) => {
     const tail = catsSummary.length === 1 ? " Since every cat needs a home, this one is replaced with a fresh blank cat." : "";
     if (window.confirm(`Delete ${catLabel(c)} — profile, ration, and all weigh-in/intake history? This can't be undone.${tail}`)) deleteCat(c.id);
@@ -87,14 +89,17 @@ export default function Settings() {
           <p style={{ color: C.faint }} className="text-xs mb-3">Every cat gets its own profile, ration, and history. They share one food library and fridge setting ({fridgeDays} day{fridgeDays === 1 ? "" : "s"}).</p>
           <div className="space-y-1.5">
             {catsSummary.map((c) => (
-              <label key={c.id} style={{ borderColor: c.id === activeCatId ? C.spruce : C.line, background: c.id === activeCatId ? C.spruceSoft : "transparent" }}
-                className="flex items-center gap-3 border rounded-xl px-3 py-2 cursor-pointer">
+              <div key={c.id} style={{ borderColor: c.id === activeCatId ? C.spruce : C.line, background: c.id === activeCatId ? C.spruceSoft : "transparent" }}
+                className="flex items-center gap-3 border rounded-xl px-3 py-2">
                 <input type="radio" name="activeCat" checked={c.id === activeCatId} onChange={() => switchCat(c.id)} style={{ accentColor: C.spruce }} aria-label={`Make ${catLabel(c)} the active cat`} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium" style={{ color: c.id === activeCatId ? C.spruce : C.ink }}>{catLabel(c)}</div>
+                  <CatNameField cat={c} renameCat={renameCat} active={c.id === activeCatId} />
                   <div style={{ color: C.faint }} className="text-xs font-mono mt-0.5">{c.ageDisplay || "age unknown"} · {c.weighIns} weigh-in{c.weighIns === 1 ? "" : "s"}</div>
                 </div>
-              </label>
+                <button onClick={() => goToProfile(c.id)} style={{ color: C.sub }} className="shrink-0 inline-flex items-center gap-0.5 text-xs hover:underline">
+                  profile <ChevronRight size={12} />
+                </button>
+              </div>
             ))}
           </div>
           <button onClick={addCat} style={{ borderColor: C.line, color: C.spruce }} className="mt-3 w-full border border-dashed rounded-xl py-2.5 text-sm inline-flex items-center justify-center gap-1.5 hover:bg-white"><Plus size={15} /> add a cat</button>
@@ -136,6 +141,25 @@ export default function Settings() {
         </section>
       </div>
     </div>
+  );
+}
+
+// Inline-editable cat name, scoped to whichever row it's rendered in (not just the active
+// cat). Local `value` state — rather than the row's own (trimmed, for display) catsSummary
+// name — is the controlled source, so a trailing space mid-word doesn't get stripped out
+// from under the cursor on every keystroke; it only resyncs when the row's cat id changes.
+function CatNameField({ cat, renameCat, active }) {
+  const [value, setValue] = useState(cat.name);
+  useEffect(() => { setValue(cat.name); }, [cat.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <input
+      type="text" value={value} placeholder="unnamed cat"
+      onChange={(e) => { setValue(e.target.value); renameCat(cat.id, e.target.value); }}
+      autoComplete="off" data-lpignore="true" data-1p-ignore data-form-type="other"
+      aria-label={`${catLabel(cat)}'s name`}
+      style={{ color: active ? C.spruce : C.ink }}
+      className="w-full bg-transparent outline-none text-sm font-medium border-b border-transparent focus:border-current"
+    />
   );
 }
 

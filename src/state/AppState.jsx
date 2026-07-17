@@ -12,7 +12,7 @@ import { usePersistence, store, probeStorage } from "../lib/storage.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
 import {
   addCat as addCatPure, deleteCat as deleteCatPure, clearCatHistory as clearCatHistoryPure, switchCat as switchCatPure,
-  freshCatState, freshProfile, defaultTr, defaultExpSettings, nextCatId, resolveUnit,
+  renameCat as renameCatPure, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit,
 } from "../lib/catStore.js";
 import { toV2, migrateV1 } from "../lib/migrate.js";
 
@@ -242,6 +242,7 @@ export function AppProvider({ children }) {
   const addCat = () => setCatsState((s) => addCatPure(s));
   const deleteCat = (id) => setCatsState((s) => deleteCatPure(s, id));
   const clearCatHistory = (id) => setCatsState((s) => clearCatHistoryPure(s, id));
+  const renameCat = (id, name) => setCatsState((s) => renameCatPure(s, id, name));
 
   // Global "erase all" — wipes every cat, the saved-food library, and fridgeDays back to a
   // single fresh blank cat + the built-in food list. Not the seed demo cat: a user who's

@@ -10,13 +10,6 @@ export const defaultTr = () => ({ on: false, days: 7, timelineUnit: "g" });
 // weight unit used to live here (per-cat); it's now a shared top-level field (see AppState.jsx).
 export const defaultExpSettings = () => ({ pctPerWeek: 1, energyBasis: "formula", algo: "v3", direction: "auto", lastMethod: "petScale" });
 
-// The active cat, cycled to the next in catsSummary order — same behavior for the header's
-// tap-to-cycle switcher and the Home masthead's tappable name.
-export const nextCatId = (catsSummary, activeCatId) => {
-  const idx = catsSummary.findIndex((c) => c.id === activeCatId);
-  return catsSummary[(idx + 1) % catsSummary.length].id;
-};
-
 // Resolve the shared weight unit on load/import: the blob's own top-level field if it's a
 // valid unit, else (an older export from before `unit` was promoted out of per-cat
 // expSettings) the given cat's old value. Undefined if neither — caller keeps whatever's
@@ -78,4 +71,11 @@ export function clearCatHistory(state, id) {
 // Switch the active cat; a no-op if the id doesn't exist.
 export function switchCat(state, id) {
   return state.cats[id] ? { ...state, activeCatId: id } : state;
+}
+
+// Rename any cat by id — not just the active one, so Settings can edit every row inline
+// without switching to it first. A no-op if the id doesn't exist.
+export function renameCat(state, id, name) {
+  if (!state.cats[id]) return state;
+  return { ...state, cats: { ...state.cats, [id]: { ...state.cats[id], profile: { ...state.cats[id].profile, name } } } };
 }
