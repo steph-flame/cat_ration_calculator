@@ -93,3 +93,14 @@ export function updateCatProfile(state, id, patch) {
 export function renameCat(state, id, name) {
   return updateCatProfile(state, id, { name });
 }
+
+// THE seam every per-cat mutation (profile edits, ration/start, weigh-ins, intake log
+// add/edit/remove, tr, expSettings — see AppState.jsx's updateActiveCat) funnels through.
+// No-op while Biscuit (DEMO_CAT_ID) is active: her data is regenerated fresh every render
+// (see lib/demoCat.js), so any "edit" would just be silently discarded on the next render
+// anyway — this makes that explicit instead of writing a `cats[DEMO_CAT_ID]` entry into real
+// state. Pure, so the no-op (and the update itself) is directly testable without React.
+export function updateActiveCatState(state, fn) {
+  if (state.activeCatId === DEMO_CAT_ID) return state;
+  return { ...state, cats: { ...state.cats, [state.activeCatId]: fn(state.cats[state.activeCatId]) } };
+}

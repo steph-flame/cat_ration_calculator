@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { median, mean, addDays, diffDays, enumerateDays, dailyReduce, fillDaily, ewma, linreg, localDateOf, manualWeighInStamp } from "./series.js";
+import { median, mean, addDays, diffDays, enumerateDays, dailyReduce, fillDaily, ewma, linreg, localDateOf, manualWeighInStamp, patchEntry } from "./series.js";
 
 describe("median / mean", () => {
   it("median of odd and even counts", () => {
@@ -114,5 +114,35 @@ describe("manualWeighInStamp", () => {
   it("defaults nowTs to Date.now() when omitted", () => {
     const today = localDateOf(Date.now());
     expect(manualWeighInStamp(today)).toEqual({ date: today, ts: expect.any(Number) });
+  });
+});
+
+describe("patchEntry", () => {
+  const items = [
+    { id: "a", date: "2026-01-01", kcal: 100 },
+    { id: "b", date: "2026-01-01", kcal: 200, grams: 50 },
+    { id: "c", date: "2026-01-02", kcal: 50 },
+  ];
+
+  it("merges the patch into only the matching entry", () => {
+    const out = patchEntry(items, "b", { grams: 60, kcal: 240 });
+    expect(out).toEqual([
+      { id: "a", date: "2026-01-01", kcal: 100 },
+      { id: "b", date: "2026-01-01", kcal: 240, grams: 60 },
+      { id: "c", date: "2026-01-02", kcal: 50 },
+    ]);
+  });
+
+  it("leaves every other entry as the same object reference", () => {
+    const out = patchEntry(items, "b", { kcal: 999 });
+    expect(out[0]).toBe(items[0]);
+    expect(out[2]).toBe(items[2]);
+    expect(out[1]).not.toBe(items[1]);
+  });
+
+  it("is a no-op (new array, same entries) when the id doesn't match anything", () => {
+    const out = patchEntry(items, "nope", { kcal: 1 });
+    expect(out).toEqual(items);
+    out.forEach((e, i) => expect(e).toBe(items[i]));
   });
 });

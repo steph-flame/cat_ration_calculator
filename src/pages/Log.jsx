@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { ChevronLeft, ChevronDown, ChevronRight, Scale, Activity, NotebookPen, Plus, X } from "lucide-react";
 import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
-import { kcalPerG } from "../lib/foods.js";
+import { kcalPerG, kcalFromGrams, isValidQty } from "../lib/foods.js";
 import { groupByDay, median, localDateOf, manualWeighInStamp } from "../lib/series.js";
 import { WEIGH_METHODS, DEFAULT_METHOD, WEIGH_SOURCES } from "../lib/expenditure.js";
 import { toDisplayWeight, fromDisplayWeight, weightLabel } from "../lib/units.js";
@@ -63,6 +63,36 @@ function DayList({ days, renderDay }) {
         </button>
       )}
     </div>
+  );
+}
+
+// A quantity that's inline-editable in place — typing doesn't commit until blur or Enter
+// (Escape reverts), so a typo mid-edit never briefly writes a bad value. Local text state
+// only; `onCommit` gets a validated number and decides what to do with it (or nothing, if
+// the guard there rejects it — the display then reverts to `value` on the next render).
+function InlineQty({ value, suffix, onCommit }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  const commit = () => {
+    const n = Number(text);
+    if (Number.isFinite(n)) onCommit(n);
+    setText(String(value)); // reverts if onCommit rejected it (value didn't change) or accepted (value now matches)
+  };
+  return (
+    <span className="inline-flex items-baseline gap-0.5">
+      <input
+        type="number" value={text} inputMode="decimal"
+        onChange={(ev) => setText(ev.target.value)}
+        onBlur={commit}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter") ev.currentTarget.blur();
+          else if (ev.key === "Escape") { setText(String(value)); ev.currentTarget.blur(); }
+        }}
+        style={{ color: C.ink, borderColor: C.line }}
+        className="w-12 text-right bg-transparent outline-none font-mono text-xs tabular-nums border-b border-dotted"
+      />
+      <span style={{ color: C.faint }}>{suffix}</span>
+    </span>
   );
 }
 
@@ -165,7 +195,11 @@ function IntakeLog({ log, library, dayStatus = {}, setDayFlag, isDemo = false })
   const days = groupByDay(log.items);
   const addEntry = () => {
     if (effectiveKcal > 0) {
-      log.add({ date, kcal: r0(effectiveKcal), grams: num(grams) || null, name: name || null });
+      // kcalPerG: the food's energy density at the moment this entry was made, so a later
+      // grams edit can re-derive kcal the SAME way this entry's kcal was computed (see
+      // computed above, and the inline edit below). Only stored when a food was actually
+      // picked (kcalG > 0) — a hand-typed kcal with no food has nothing to convert from.
+      log.add({ date, kcal: r0(effectiveKcal), grams: num(grams) || null, name: name || null, kcalPerG: kcalG > 0 ? kcalG : null });
       setGrams(""); setKcal("");
     }
   };
@@ -198,13 +232,35 @@ function IntakeLog({ log, library, dayStatus = {}, setDayFlag, isDemo = false })
         </div>
         {isOpen && (
           <div className="pl-4 py-1 space-y-0.5">
-            {items.map((en) => (
-              <div key={en.id} className="flex items-center justify-between text-xs font-mono">
-                <span style={{ color: C.faint }}>{en.name ? en.name.split(" ").slice(0, 2).join(" ") : "—"}{en.grams ? ` · ${r0(en.grams)}g` : ""}</span>
-                <span className="flex items-center gap-2"><span style={{ color: C.sub }} className="tabular-nums">{r0(en.kcal)} kcal</span>
-                  <button onClick={() => log.remove(en.id)} style={{ color: C.faint }}><X size={12} /></button></span>
-              </div>
-            ))}
+            {items.map((en) => {
+              // The dedicated "nothing eaten" 0-kcal marker (see addNothingEaten above) isn't
+              // editable through this path — 0 stays that action's job, not a typo to fix.
+              const nothingEaten = en.kcal === 0;
+              const editable = !isDemo && !nothingEaten;
+              // Grams are only re-derivable to kcal when this entry recorded the food's energy
+              // density at creation (kcalPerG — see addEntry above); older entries and
+              // hand-typed-kcal entries lack it, so kcal is edited directly instead.
+              const canEditGrams = en.grams != null && num(en.kcalPerG) > 0;
+              return (
+                <div key={en.id} className="flex items-center justify-between text-xs font-mono gap-2">
+                  {/* Full stored name, CSS-truncated with a hover title rather than sliced —
+                      the quantity controls below live OUTSIDE this span so a long name's
+                      ellipsis can never clip an editable field into invisibility. */}
+                  <span style={{ color: C.faint }} className="truncate min-w-0" title={en.name || undefined}>{en.name || "—"}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    {en.grams != null && (editable && canEditGrams
+                      ? <InlineQty value={r0(en.grams)} suffix="g"
+                          onCommit={(n) => { if (isValidQty(n)) log.edit(en.id, { grams: n, kcal: kcalFromGrams(en, n) }); }} />
+                      : <span style={{ color: C.faint }} className="tabular-nums">{r0(en.grams)}g</span>)}
+                    {editable && !canEditGrams
+                      ? <InlineQty value={r0(en.kcal)} suffix="kcal"
+                          onCommit={(n) => { if (isValidQty(n)) log.edit(en.id, { kcal: r0(n) }); }} />
+                      : <span style={{ color: C.sub }} className="tabular-nums">{r0(en.kcal)} kcal</span>}
+                    <button onClick={() => log.remove(en.id)} style={{ color: C.faint }}><X size={12} /></button>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { addCat, deleteCat, clearCatHistory, switchCat, renameCat, updateCatProfile, freshCatState, freshProfile, defaultExpSettings, resolveUnit, DEMO_CAT_ID } from "./catStore.js";
+import { addCat, deleteCat, clearCatHistory, switchCat, renameCat, updateCatProfile, updateActiveCatState, freshCatState, freshProfile, defaultExpSettings, resolveUnit, DEMO_CAT_ID } from "./catStore.js";
+import { patchEntry } from "./series.js";
 
 const stateWith = (ids) => ({
   activeCatId: ids[0],
@@ -115,6 +116,23 @@ describe("mutation seams no-op while Biscuit (the demo cat) is targeted", () => 
   it("renameCat is a no-op for DEMO_CAT_ID", () => {
     const s0 = stateWith(["a"]);
     expect(renameCat(s0, DEMO_CAT_ID, "Hacked")).toBe(s0);
+  });
+  it("updateActiveCatState is a no-op when Biscuit is active", () => {
+    const s0 = { activeCatId: DEMO_CAT_ID, cats: stateWith(["a"]).cats };
+    const fn = (cat) => ({ ...cat, intakeLog: [] }); // would blow away "a"'s log if it ran
+    expect(updateActiveCatState(s0, fn)).toBe(s0);
+  });
+});
+
+// The seam every intake-log edit (Log.jsx's inline quantity edit) goes through: the active
+// cat's per-cat state, patched via a caller-supplied fn — same seam profile/ration/tr/etc use.
+describe("updateActiveCatState", () => {
+  it("applies fn to the active cat only, leaving other cats' references untouched", () => {
+    const s0 = stateWith(["a", "b"]);
+    const fn = (cat) => ({ ...cat, intakeLog: patchEntry(cat.intakeLog, "i", { kcal: 300 }) });
+    const s1 = updateActiveCatState(s0, fn);
+    expect(s1.cats.a.intakeLog).toEqual([{ id: "i", date: "2026-01-01", kcal: 300 }]);
+    expect(s1.cats.b).toBe(s0.cats.b); // untouched — same object reference
   });
 });
 

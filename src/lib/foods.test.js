@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  distribute, waterfall, transitionAmount, kcalPerG,
+  distribute, waterfall, transitionAmount, kcalPerG, kcalFromGrams, isValidQty,
   upsertFood, searchFoods, isCompleteFood, toLibraryEntry, makeLibrarySeed, dedupeFoods, canonicalFoodName,
   migrateLegacyFood, ensureBuiltins,
 } from "./foods.js";
@@ -39,6 +39,36 @@ describe("kcalPerG", () => {
   });
   it("wet: kcal/can / grams/can", () => {
     expect(kcalPerG({ mode: "perUnit", kcalPerUnit: 70, gramsPerUnit: 79.4 })).toBeCloseTo(70 / 79.4, 6);
+  });
+});
+
+describe("kcalFromGrams (intake-log inline grams edit)", () => {
+  it("re-derives kcal using the entry's stored kcalPerG", () => {
+    expect(kcalFromGrams({ kcalPerG: 4 }, 60)).toBe(240);
+  });
+  it("rounds like entry creation does", () => {
+    expect(kcalFromGrams({ kcalPerG: 70 / 79.4 }, 60)).toBe(Math.round((70 / 79.4) * 60));
+  });
+  it("returns null when the entry has no kcalPerG basis (older entry, or hand-typed kcal)", () => {
+    expect(kcalFromGrams({ grams: 50, kcal: 200 }, 60)).toBeNull();
+    expect(kcalFromGrams({ kcalPerG: 0 }, 60)).toBeNull();
+    expect(kcalFromGrams({ kcalPerG: null }, 60)).toBeNull();
+  });
+});
+
+describe("isValidQty guards edited intake quantities", () => {
+  it("accepts ordinary positive numbers", () => {
+    expect(isValidQty(1)).toBe(true);
+    expect(isValidQty(240)).toBe(true);
+    expect(isValidQty(0.5)).toBe(true);
+  });
+  it("rejects zero — reserved for the explicit 'nothing eaten' marker, not an edited-down entry", () => {
+    expect(isValidQty(0)).toBe(false);
+  });
+  it("rejects negative, NaN, and non-finite values", () => {
+    expect(isValidQty(-5)).toBe(false);
+    expect(isValidQty(NaN)).toBe(false);
+    expect(isValidQty(Infinity)).toBe(false);
   });
 });
 

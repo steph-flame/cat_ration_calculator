@@ -1,7 +1,7 @@
 // Food semantics: the math of a food list (energy density, % splits, transitions)
 // and the food library (built-in starters + the shape of a saved food). Pure — no I/O.
 
-import { num, r1, uid } from "./util.js";
+import { num, r0, r1, uid } from "./util.js";
 
 /* ---------- energy density & % helpers (shared by every list) ---------- */
 export const sumPct = (rows) => rows.reduce((s, f) => s + num(f.pct), 0);
@@ -9,6 +9,23 @@ export const sumPct = (rows) => rows.reduce((s, f) => s + num(f.pct), 0);
 export const kcalPerG = (f) =>
   f.mode === "perKg" ? num(f.kcalPerKg) / 1000
     : (num(f.gramsPerUnit) > 0 ? num(f.kcalPerUnit) / num(f.gramsPerUnit) : 0);
+
+// Re-derive an intake-log entry's kcal from an edited grams value, using the SAME per-gram
+// density recorded on the entry at creation time (entry.kcalPerG — see Log.jsx's addEntry,
+// which stores it whenever a food was picked). Returns null when the entry can't support a
+// grams-based edit at all — no density was recorded (an entry logged before this field
+// existed, or one where kcal was typed by hand with no food picked) — callers fall back to
+// editing kcal directly in that case.
+export function kcalFromGrams(entry, grams) {
+  if (!(num(entry?.kcalPerG) > 0)) return null;
+  return r0(grams * entry.kcalPerG);
+}
+
+// Guard for an edited intake-log quantity (grams or kcal): must be a genuine positive number.
+// Same bar entry creation already holds itself to (Log.jsx only ever adds an entry when its
+// kcal is > 0) — deliberately NOT relaxed to allow 0 here, since 0 is reserved for the
+// explicit "nothing eaten" marker, not an ordinary entry edited down to nothing.
+export const isValidQty = (n) => Number.isFinite(n) && n > 0;
 
 // Integer split of target sum S across rows, proportional to current values (even if all zero).
 export function distribute(vals, S) {

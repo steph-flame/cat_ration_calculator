@@ -7,12 +7,12 @@ import {
   migrateLegacyFood, ensureBuiltins, sumPct, blankFood, normalizePct, waterfall,
 } from "../lib/foods.js";
 import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure, WEIGH_SOURCES, DEFAULT_METHOD } from "../lib/expenditure.js";
-import { groupByDay, median, localDateOf, manualWeighInStamp } from "../lib/series.js";
+import { groupByDay, median, localDateOf, manualWeighInStamp, patchEntry } from "../lib/series.js";
 import { usePersistence, store, probeStorage } from "../lib/storage.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
 import {
   addCat as addCatPure, deleteCat as deleteCatPure, clearCatHistory as clearCatHistoryPure, switchCat as switchCatPure,
-  updateCatProfile as updateCatProfilePure, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit, DEMO_CAT_ID,
+  updateCatProfile as updateCatProfilePure, updateActiveCatState, freshCatState, freshProfile, defaultTr, defaultExpSettings, resolveUnit, DEMO_CAT_ID,
 } from "../lib/catStore.js";
 import { buildDemoCat } from "../lib/demoCat.js";
 import { toV2, migrateV1 } from "../lib/migrate.js";
@@ -99,10 +99,7 @@ export function AppProvider({ children }) {
   // through. No-op while Biscuit is active: her data is regenerated fresh every time, so any
   // "edit" would just be silently discarded on the next render anyway — this makes that
   // explicit instead of writing a `cats[DEMO_CAT_ID]` entry into real state.
-  const updateActiveCat = (fn) => {
-    if (catsState.activeCatId === DEMO_CAT_ID) return;
-    setCatsState((s) => ({ ...s, cats: { ...s.cats, [s.activeCatId]: fn(s.cats[s.activeCatId]) } }));
-  };
+  const updateActiveCat = (fn) => setCatsState((s) => updateActiveCatState(s, fn));
 
   // Load: the stored blob is our own — always a whole snapshot (v1 legacy or v2). Migrate
   // v1 → v2 (see lib/migrate.js) then adopt it wholesale.
@@ -198,7 +195,7 @@ export function AppProvider({ children }) {
     return {
       items, setItems,
       add: (entry) => setItems((xs) => [...xs, { id: uid(), ...entry }]),
-      edit: (id, patch) => setItems((xs) => xs.map((e) => (e.id === id ? { ...e, ...patch } : e))),
+      edit: (id, patch) => setItems((xs) => patchEntry(xs, id, patch)),
       remove: (id) => setItems((xs) => xs.filter((e) => e.id !== id)),
     };
   };
