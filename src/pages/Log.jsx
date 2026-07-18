@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { ChevronLeft, ChevronDown, ChevronRight, Scale, Activity, NotebookPen, Plus, X } from "lucide-react";
 import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
 import { kcalPerG, kcalFromGrams, isValidQty } from "../lib/foods.js";
 import { groupByDay, median, localDateOf, manualWeighInStamp } from "../lib/series.js";
+import { earliestLoggedDay, clampDay, canGoPrev, canGoNext, shiftDay, dayStripWindow, formatDayLabel } from "../lib/dayPager.js";
 import { WEIGH_METHODS, DEFAULT_METHOD, WEIGH_SOURCES } from "../lib/expenditure.js";
 import { toDisplayWeight, fromDisplayWeight, weightLabel } from "../lib/units.js";
 import { DEMO_CAT_ID } from "../lib/catStore.js";
@@ -11,17 +12,92 @@ import { useApp } from "../state/AppState.jsx";
 import FoodSearch from "../components/FoodSearch.jsx";
 import { Field, NumInput, Note } from "../components/primitives.jsx";
 import CatMark from "../components/CatMark.jsx";
+import DayStrip from "../components/DayStrip.jsx";
 
-// LOCAL date (see lib/series.js localDateOf) — a date-picker defaulting to "today" should mean
-// the owner's today, not whatever day it already is in UTC (which flips early near midnight
-// in a western timezone).
+// LOCAL date (see lib/series.js localDateOf) — "today" means the owner's today, not whatever
+// day it already is in UTC (which flips early near midnight in a western timezone).
 const today = () => localDateOf(Date.now());
 const methodLabel = (m) => (WEIGH_METHODS[m] || WEIGH_METHODS[DEFAULT_METHOD]).label;
-const INITIAL_DAYS = 5;
+// Swipe-to-page threshold, px — below this (or when the gesture reads as mostly-vertical) it's
+// left alone so ordinary scrolling on the day panel is never hijacked.
+const SWIPE_PX = 40;
 
 export default function Log() {
   const { p, weightLog, intakeLog, library, expSettings, setExpSettings, unit, intakeDayStatus, setIntakeDayFlag, activeCatId } = useApp();
   const isDemo = activeCatId === DEMO_CAT_ID; // Biscuit's data is regenerated fresh every time — every mutation seam no-ops, so hide the controls rather than show a dead button
+
+  // The day pager's whole state: which single day is being viewed. Bounds are derived, not
+  // stored — `todayStr` is read live every render (so it advances if the tab is left open past
+  // midnight) and `minDate` is the earliest day either log has ANY entry on (empty days within
+  // that span are still visitable — backfill). New cats with zero history get a [today, today]
+  // range (see earliestLoggedDay's fallback).
+  const todayStr = today();
+  const minDate = useMemo(() => earliestLoggedDay(weightLog.items, intakeLog.items, todayStr), [weightLog.items, intakeLog.items, todayStr]);
+  const [viewedDate, setViewedDate] = useState(todayStr);
+  // Re-clamp if the range shifts under the viewed day (data cleared, or a new day rolled over
+  // while today's the viewed day) rather than leaving it pointing outside [minDate, todayStr].
+  useEffect(() => { setViewedDate((d) => clampDay(d, minDate, todayStr)); }, [minDate, todayStr]);
+  const isToday = viewedDate === todayStr;
+
+  const goPrev = () => setViewedDate((d) => shiftDay(d, -1, minDate, todayStr));
+  const goNext = () => setViewedDate((d) => shiftDay(d, 1, minDate, todayStr));
+  const jumpTo = (d) => setViewedDate(clampDay(d, minDate, todayStr));
+
+  // Keyboard ←/→, ignored while any input/textarea/select is focused so typing a weight or
+  // food name never accidentally pages the day out from under the form.
+  useEffect(() => {
+    const onKey = (ev) => {
+      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (ev.key === "ArrowLeft") setViewedDate((d) => shiftDay(d, -1, minDate, todayStr));
+      else setViewedDate((d) => shiftDay(d, 1, minDate, todayStr));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [minDate, todayStr]);
+
+  // Touch swipe on the day panel (not the strip, which has its own per-column tap target).
+  const touchStart = useRef(null);
+  const onTouchStart = (ev) => { const t = ev.touches[0]; touchStart.current = t ? { x: t.clientX, y: t.clientY } : null; };
+  const onTouchEnd = (ev) => {
+    if (!touchStart.current) return;
+    const t = ev.changedTouches[0];
+    const dx = t.clientX - touchStart.current.x, dy = t.clientY - touchStart.current.y;
+    touchStart.current = null;
+    if (Math.abs(dx) < SWIPE_PX || Math.abs(dx) < Math.abs(dy)) return; // too short, or mostly vertical scroll
+    if (dx < 0) goNext(); else goPrev();
+  };
+
+  // Strip data: last ~30 days ending today (fewer if less history — see dayStripWindow),
+  // each day's total intake kcal + whether it's flagged incomplete, and its median weigh-in.
+  const stripDays = useMemo(() => dayStripWindow(minDate, todayStr), [minDate, todayStr]);
+  const stripData = useMemo(() => {
+    const intakeByDay = new Map(groupByDay(intakeLog.items).map((g) => [g.date, g.items]));
+    const weightByDay = new Map(groupByDay(weightLog.items).map((g) => [g.date, g.items]));
+    const out = {};
+    for (const d of stripDays) {
+      const iItems = intakeByDay.get(d);
+      const wItems = weightByDay.get(d);
+      out[d] = {
+        kcal: iItems ? iItems.reduce((s, en) => s + num(en.kcal), 0) : null,
+        imputed: intakeDayStatus[d] === "incomplete",
+        weightKg: wItems ? median(wItems.map((e) => num(e.kg))) : null,
+      };
+    }
+    return out;
+  }, [stripDays, intakeLog.items, weightLog.items, intakeDayStatus]);
+
+  // All days either log has ever touched, for the "all days" escape-hatch disclosure below —
+  // newest first, same convention as the old day-group list.
+  const allDays = useMemo(() => {
+    const set = new Set();
+    for (const e of weightLog.items) if (e?.date) set.add(e.date);
+    for (const e of intakeLog.items) if (e?.date) set.add(e.date);
+    return [...set].sort((a, b) => (a > b ? -1 : 1));
+  }, [weightLog.items, intakeLog.items]);
+  const weightByDayAll = useMemo(() => new Map(groupByDay(weightLog.items).map((g) => [g.date, g.items])), [weightLog.items]);
+  const intakeByDayAll = useMemo(() => new Map(groupByDay(intakeLog.items).map((g) => [g.date, g.items])), [intakeLog.items]);
 
   return (
     <div style={{ background: C.paper, color: C.ink, minHeight: "100%" }} className="w-full">
@@ -43,26 +119,79 @@ export default function Log() {
           </div>
         </div>
 
-        <WeightLog log={weightLog} unit={unit} lastMethod={expSettings.lastMethod || DEFAULT_METHOD} onMethod={(m) => setExpSettings({ lastMethod: m })} />
-        <IntakeLog log={intakeLog} library={library} dayStatus={intakeDayStatus} setDayFlag={setIntakeDayFlag} isDemo={isDemo} />
+        <DayStrip days={stripDays} data={stripData} selected={viewedDate} onSelect={jumpTo} unit={unit} />
+
+        <DayPagerHeader date={viewedDate} todayStr={todayStr} onPrev={goPrev} onNext={goNext}
+          canPrev={canGoPrev(viewedDate, minDate)} canNext={canGoNext(viewedDate, todayStr)} />
+
+        <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          <WeightLog log={weightLog} unit={unit} lastMethod={expSettings.lastMethod || DEFAULT_METHOD} onMethod={(m) => setExpSettings({ lastMethod: m })}
+            viewedDate={viewedDate} isToday={isToday} isDemo={isDemo} />
+          <IntakeLog log={intakeLog} library={library} dayStatus={intakeDayStatus} setDayFlag={setIntakeDayFlag} isDemo={isDemo}
+            viewedDate={viewedDate} isToday={isToday} />
+        </div>
+
+        <AllDaysDisclosure days={allDays} weightByDay={weightByDayAll} intakeByDay={intakeByDayAll} onJump={jumpTo} />
       </div>
     </div>
   );
 }
 
-// A collapsible list of day-groups: shows INITIAL_DAYS, then a "show more" for the rest.
-function DayList({ days, renderDay }) {
-  const [showAll, setShowAll] = useState(false);
-  const shown = showAll ? days : days.slice(0, INITIAL_DAYS);
+// The pager's header row: ‹ arrow, the day label ("Today"/"Yesterday"/else a short date), ›
+// arrow (disabled past today). Real labeled buttons (not divs) — arrow-key nav is documented
+// here via aria-label, the visible way to discover it is the disabled state at the future edge.
+function DayPagerHeader({ date, todayStr, onPrev, onNext, canPrev, canNext }) {
+  const label = formatDayLabel(date, todayStr);
   return (
-    <div className="mt-3 space-y-1.5">
-      {shown.map(renderDay)}
-      {days.length > INITIAL_DAYS && (
-        <button onClick={() => setShowAll((s) => !s)} style={{ color: C.spruce }} className="text-xs font-mono inline-flex items-center gap-1 pt-1">
-          {showAll ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{showAll ? "show less" : `show ${days.length - INITIAL_DAYS} more day${days.length - INITIAL_DAYS === 1 ? "" : "s"}`}
-        </button>
-      )}
+    <div className="flex items-center justify-between mb-4">
+      <button onClick={onPrev} disabled={!canPrev} aria-label="Previous day"
+        style={{ borderColor: C.line, color: C.spruce, opacity: canPrev ? 1 : 0.35 }}
+        className="border rounded-lg p-2 disabled:cursor-not-allowed"><ChevronLeft size={16} /></button>
+      <div className="text-center leading-tight">
+        <div className="font-semibold text-base">{label}</div>
+        {label !== date && <div style={{ color: C.faint }} className="text-xs font-mono">{date}</div>}
+      </div>
+      <button onClick={onNext} disabled={!canNext} aria-label="Next day (use the right arrow key, or swipe left)"
+        style={{ borderColor: C.line, color: C.spruce, opacity: canNext ? 1 : 0.35 }}
+        className="border rounded-lg p-2 disabled:cursor-not-allowed"><ChevronRight size={16} /></button>
     </div>
+  );
+}
+
+// The "all days" escape hatch: a collapsed compact list (day, weigh-in count, intake count +
+// total kcal), one row per day either log has ever touched. Replaces the old per-section
+// DayList as the way to scan/find/clear old data without the pager's one-day-at-a-time view —
+// clicking a row jumps the pager there instead of expanding in place.
+function AllDaysDisclosure({ days, weightByDay, intakeByDay, onJump }) {
+  const [open, setOpen] = useState(false);
+  if (days.length === 0) return null;
+  return (
+    <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
+      <button onClick={() => setOpen((o) => !o)} style={{ color: C.sub }} className="w-full flex items-center gap-1 text-xs font-mono">
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />} all days ({days.length})
+      </button>
+      {open && (
+        <div className="mt-2 space-y-0.5">
+          {days.map((d) => {
+            const w = weightByDay.get(d) || [];
+            const it = intakeByDay.get(d) || [];
+            const total = it.reduce((s, en) => s + num(en.kcal), 0);
+            return (
+              <button key={d} onClick={() => onJump(d)}
+                className="w-full flex items-center justify-between text-xs font-mono py-1 border-b hover:opacity-80"
+                style={{ borderColor: C.line, color: C.sub }}>
+                <span>{d}</span>
+                <span style={{ color: C.faint }}>
+                  {w.length ? `${w.length} read${w.length === 1 ? "" : "s"}` : "—"}
+                  {" · "}
+                  {it.length ? `${it.length} item${it.length === 1 ? "" : "s"} · ${r0(total)} kcal` : "—"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -97,132 +226,146 @@ function InlineQty({ value, suffix, onCommit }) {
 }
 
 /* ---------- weight log ---------- */
-function WeightLog({ log, unit, lastMethod, onMethod }) {
-  const [date, setDate] = useState(today);
+function WeightLog({ log, unit, lastMethod, onMethod, viewedDate, isToday, isDemo }) {
   const [val, setVal] = useState("");
   const [method, setMethod] = useState(lastMethod || DEFAULT_METHOD);
   const chooseMethod = (m) => { setMethod(m); onMethod?.(m); }; // remember last-used across sessions
-  const [open, setOpen] = useState(() => new Set()); // expanded day → shows individual reads
-  const days = groupByDay(log.items);
-  // manualWeighInStamp stamps a real time-of-day `ts` only when the picked date IS today (a
+  const dayItems = useMemo(() => log.items.filter((e) => e.date === viewedDate), [log.items, viewedDate]);
+  const dayKg = dayItems.length ? median(dayItems.map((e) => num(e.kg))) : null;
+  // manualWeighInStamp stamps a real time-of-day `ts` only when the VIEWED day IS today (a
   // live "log now") — a backfilled entry for a past day has no actual time behind it, so it
-  // stays untimed (see the Log display below: entries without `ts` show nothing extra, no
-  // dash clutter).
+  // stays untimed (see the per-entry time display below: entries without `ts` show nothing
+  // extra, no dash clutter).
   const addEntry = () => {
     if (num(val) > 0) {
-      log.add({ ...manualWeighInStamp(date), kg: fromDisplayWeight(num(val), unit), method, source: WEIGH_SOURCES.manual });
+      log.add({ ...manualWeighInStamp(viewedDate), kg: fromDisplayWeight(num(val), unit), method, source: WEIGH_SOURCES.manual });
       setVal("");
     }
   };
   const methodsUsed = new Set(log.items.map((e) => e.method).filter(Boolean));
-  const toggleDay = (d) => setOpen((s) => { const n = new Set(s); n.has(d) ? n.delete(d) : n.add(d); return n; });
-
-  const renderDay = ({ date: d, items }) => {
-    const dayKg = median(items.map((e) => num(e.kg)));
-    const isOpen = open.has(d);
-    return (
-      <div key={d}>
-        <button onClick={() => toggleDay(d)} className="w-full flex items-center justify-between text-sm font-mono py-1 border-b" style={{ borderColor: C.line }}>
-          <span style={{ color: C.sub }} className="inline-flex items-center gap-1">
-            {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{d}
-            <span style={{ color: C.faint }} className="text-xs">· {items.length} read{items.length === 1 ? "" : "s"}{items.some((e) => e.source === WEIGH_SOURCES.litterRobot) ? " · auto" : ""}</span>
-          </span>
-          <span style={{ color: C.ink }} className="tabular-nums">{r1(toDisplayWeight(dayKg, unit))} {weightLabel(unit)}<span style={{ color: C.faint }} className="text-xs"> avg</span></span>
-        </button>
-        {isOpen && (
-          <div className="pl-4 py-1 space-y-0.5">
-            {items.map((en) => (
-              <div key={en.id} className="flex items-center justify-between text-xs font-mono">
-                <span style={{ color: C.faint }}>
-                  {en.method ? methodLabel(en.method) : "—"}{en.source === WEIGH_SOURCES.litterRobot ? " · auto" : ""}
-                  {en.ts != null && <span style={{ color: C.faint }}> · {new Date(en.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
-                </span>
-                <span className="flex items-center gap-2"><span style={{ color: C.sub }} className="tabular-nums">{r1(toDisplayWeight(num(en.kg), unit))} {weightLabel(unit)}</span>
-                  <button onClick={() => log.remove(en.id)} style={{ color: C.faint }}><X size={12} /></button></span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
       <h2 className="font-medium mb-1">Weight log</h2>
       <p style={{ color: C.faint }} className="text-xs mb-3">One or more weigh-ins per day — the day's reads are median-averaged. Log manually below, or connect a Litter-Robot in Settings to have it appended automatically (tagged "auto").</p>
 
-      <div className="mb-2">
-        <div style={{ color: C.sub }} className="text-xs mb-1">Measured with</div>
-        <div className="flex flex-wrap gap-1.5">
-          {Object.entries(WEIGH_METHODS).map(([key, m]) => (
-            <button key={key} onClick={() => chooseMethod(key)} aria-pressed={method === key}
-              style={{ borderColor: method === key ? C.spruce : C.line, background: method === key ? C.spruceSoft : "transparent", color: method === key ? C.spruce : C.sub }}
-              className="text-xs border rounded-lg px-2 py-1 font-mono">{m.label}</button>
-          ))}
-        </div>
-        {WEIGH_METHODS[method].hint && <p style={{ color: C.faint }} className="text-xs mt-1">{WEIGH_METHODS[method].hint}{method === "difference" && " — noisiest; the app leans on the median of several reads"}</p>}
-      </div>
+      {!isDemo && (
+        <>
+          <div className="mb-2">
+            <div style={{ color: C.sub }} className="text-xs mb-1">Measured with</div>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(WEIGH_METHODS).map(([key, m]) => (
+                <button key={key} onClick={() => chooseMethod(key)} aria-pressed={method === key}
+                  style={{ borderColor: method === key ? C.spruce : C.line, background: method === key ? C.spruceSoft : "transparent", color: method === key ? C.spruce : C.sub }}
+                  className="text-xs border rounded-lg px-2 py-1 font-mono">{m.label}</button>
+              ))}
+            </div>
+            {WEIGH_METHODS[method].hint && <p style={{ color: C.faint }} className="text-xs mt-1">{WEIGH_METHODS[method].hint}{method === "difference" && " — noisiest; the app leans on the median of several reads"}</p>}
+          </div>
 
-      <div className="flex items-end gap-2">
-        <label className="block flex-1"><div style={{ color: C.sub }} className="text-xs mb-1">Date</div>
-          <input type="date" value={date} onChange={(ev) => setDate(ev.target.value)} style={{ borderColor: C.line, color: C.ink }} className="w-full border rounded-lg px-2.5 py-1.5 bg-white text-sm font-mono outline-none" /></label>
-        <div className="w-24"><Field label="Weight" suffix={weightLabel(unit)}><NumInput value={val} onChange={setVal} step={unit === "lb" ? "0.05" : "0.01"} /></Field></div>
-        <button onClick={addEntry} style={{ background: C.spruce }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
-      </div>
+          <div className="flex items-end gap-2">
+            <div className="w-24"><Field label="Weight" suffix={weightLabel(unit)}><NumInput value={val} onChange={setVal} step={unit === "lb" ? "0.05" : "0.01"} /></Field></div>
+            <button onClick={addEntry} style={{ background: C.spruce }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
+          </div>
 
-      {methodsUsed.size > 1 && (
-        <Note>This log mixes measurement methods ({[...methodsUsed].map(methodLabel).join(", ")}). Different methods can sit a bit apart, which reads as a jump in the trend — prefer sticking to one where you can.</Note>
+          {methodsUsed.size > 1 && (
+            <Note>This log mixes measurement methods ({[...methodsUsed].map(methodLabel).join(", ")}). Different methods can sit a bit apart, which reads as a jump in the trend — prefer sticking to one where you can.</Note>
+          )}
+        </>
       )}
-      {days.length > 0 && <DayList days={days} renderDay={renderDay} />}
+
+      <div className="mt-3">
+        {dayItems.length > 0 ? (
+          <>
+            <div className="flex items-center justify-between text-sm font-mono py-1 border-b" style={{ borderColor: C.line }}>
+              <span style={{ color: C.sub }} className="inline-flex items-center gap-1">
+                {dayItems.length} read{dayItems.length === 1 ? "" : "s"}
+                {dayItems.some((e) => e.source === WEIGH_SOURCES.litterRobot) && <span style={{ color: C.faint }} className="text-xs">· auto</span>}
+              </span>
+              <span style={{ color: C.ink }} className="tabular-nums">{r1(toDisplayWeight(dayKg, unit))} {weightLabel(unit)}<span style={{ color: C.faint }} className="text-xs"> avg</span></span>
+            </div>
+            <div className="pl-1 py-1 space-y-0.5">
+              {dayItems.map((en) => (
+                <div key={en.id} className="flex items-center justify-between text-xs font-mono">
+                  <span style={{ color: C.faint }}>
+                    {en.method ? methodLabel(en.method) : "—"}{en.source === WEIGH_SOURCES.litterRobot ? " · auto" : ""}
+                    {en.ts != null && <span style={{ color: C.faint }}> · {new Date(en.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+                  </span>
+                  <span className="flex items-center gap-2"><span style={{ color: C.sub }} className="tabular-nums">{r1(toDisplayWeight(num(en.kg), unit))} {weightLabel(unit)}</span>
+                    {!isDemo && <button onClick={() => log.remove(en.id)} style={{ color: C.faint }} aria-label="Remove this weigh-in"><X size={12} /></button>}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p style={{ color: C.faint }} className="text-xs py-2">No weigh-ins logged {isToday ? "today" : "this day"}.</p>
+        )}
+      </div>
     </section>
   );
 }
 
 /* ---------- intake log ---------- */
-function IntakeLog({ log, library, dayStatus = {}, setDayFlag, isDemo = false }) {
-  const [date, setDate] = useState(today);
+function IntakeLog({ log, library, dayStatus = {}, setDayFlag, isDemo = false, viewedDate, isToday }) {
   const [name, setName] = useState("");
   const [kcalG, setKcalG] = useState(0);
   const [grams, setGrams] = useState("");
   const [kcal, setKcal] = useState("");
-  const [open, setOpen] = useState(() => new Set());
   const computed = num(grams) > 0 && kcalG > 0 ? num(grams) * kcalG : null;
   // Auto-fill kcal from food × grams, but let the user override it afterward (they can edit
   // the field; it only re-fills when the food or grams change).
   useEffect(() => { if (computed != null) setKcal(String(r0(computed))); }, [computed]);
   const effectiveKcal = num(kcal);
-  const days = groupByDay(log.items);
+  const dayItems = useMemo(() => log.items.filter((e) => e.date === viewedDate), [log.items, viewedDate]);
+  const total = dayItems.reduce((s, en) => s + num(en.kcal), 0);
+  const flagged = dayStatus[viewedDate] === "incomplete";
   const addEntry = () => {
     if (effectiveKcal > 0) {
       // kcalPerG: the food's energy density at the moment this entry was made, so a later
       // grams edit can re-derive kcal the SAME way this entry's kcal was computed (see
       // computed above, and the inline edit below). Only stored when a food was actually
       // picked (kcalG > 0) — a hand-typed kcal with no food has nothing to convert from.
-      log.add({ date, kcal: r0(effectiveKcal), grams: num(grams) || null, name: name || null, kcalPerG: kcalG > 0 ? kcalG : null });
+      log.add({ date: viewedDate, kcal: r0(effectiveKcal), grams: num(grams) || null, name: name || null, kcalPerG: kcalG > 0 ? kcalG : null });
       setGrams(""); setKcal("");
     }
   };
   // A true zero day (fasted/refused food) — an explicit 0-kcal entry, so the estimator reads
   // it as real data, not a missing/imputed day (see lib/expenditure.js's buildIntakeDayMap).
-  // Uses whatever date is set in the form above, so a missed day can be logged retroactively.
-  const addNothingEaten = () => log.add({ date, kcal: 0, grams: null, name: "nothing eaten" });
-  const toggleDay = (d) => setOpen((s) => { const n = new Set(s); n.has(d) ? n.delete(d) : n.add(d); return n; });
+  // Always the VIEWED day, so a missed day can be logged retroactively via the pager.
+  const addNothingEaten = () => log.add({ date: viewedDate, kcal: 0, grams: null, name: "nothing eaten" });
 
-  const renderDay = ({ date: d, items }) => {
-    const total = items.reduce((s, en) => s + num(en.kcal), 0);
-    const isOpen = open.has(d);
-    const flagged = dayStatus[d] === "incomplete";
-    return (
-      <div key={d}>
-        <div className="w-full flex items-center justify-between text-sm font-mono py-1 border-b" style={{ borderColor: C.line }}>
-          <button onClick={() => toggleDay(d)} style={{ color: C.sub }} className="inline-flex items-center gap-1 min-w-0">
-            {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{d}
-            <span style={{ color: C.faint }} className="text-xs">· {items.length} item{items.length === 1 ? "" : "s"}</span>
+  return (
+    <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
+      <h2 className="font-medium mb-1">Intake log</h2>
+      <p style={{ color: C.faint }} className="text-xs mb-3">What you dispensed. Pick a saved food and enter grams, or enter kcal directly. Multiple entries per day sum.</p>
+      {!isDemo && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 border rounded-xl p-2" style={{ borderColor: C.line }}>
+            <FoodSearch value={name} search={library.search}
+              onChangeName={(v) => { setName(v); setKcalG(0); }}
+              onPick={(food) => { setName(food.name); setKcalG(kcalPerG(food)); }} />
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="w-20"><Field label="Grams" suffix="g"><NumInput value={grams} onChange={setGrams} step="1" /></Field></div>
+            <div className="w-24"><Field label="kcal" suffix="kcal">
+              <NumInput value={kcal} onChange={setKcal} step="1" /></Field></div>
+            <button onClick={addEntry} style={{ background: C.spruce }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
+          </div>
+          {kcalG > 0 && <p style={{ color: C.faint }} className="text-xs">{name} ≈ {r0(kcalG * 1000)} kcal/kg — grams × that fills kcal automatically.</p>}
+          <button onClick={addNothingEaten} style={{ color: C.sub }} className="text-xs font-mono inline-flex items-center gap-1 underline decoration-dotted">
+            nothing eaten {isToday ? "today" : "this day"}
           </button>
+        </div>
+      )}
+
+      <div className="mt-3">
+        <div className="w-full flex items-center justify-between text-sm font-mono py-1 border-b" style={{ borderColor: C.line }}>
+          <span style={{ color: C.sub }} className="inline-flex items-center gap-1">
+            {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
+          </span>
           <span className="flex items-center gap-2 shrink-0">
-            {!isDemo && (
-              <button onClick={() => setDayFlag(d, !flagged)} aria-pressed={flagged}
+            {!isDemo && dayItems.length > 0 && (
+              <button onClick={() => setDayFlag(viewedDate, !flagged)} aria-pressed={flagged}
                 style={{ color: flagged ? C.amber : C.faint }} className="text-[11px] font-mono underline decoration-dotted">
                 {flagged ? "incomplete — excluded from estimate" : "mark incomplete"}
               </button>
@@ -230,9 +373,9 @@ function IntakeLog({ log, library, dayStatus = {}, setDayFlag, isDemo = false })
             <span style={{ color: C.ink }} className="tabular-nums">{r0(total)} kcal</span>
           </span>
         </div>
-        {isOpen && (
-          <div className="pl-4 py-1 space-y-0.5">
-            {items.map((en) => {
+        {dayItems.length > 0 ? (
+          <div className="pl-1 py-1 space-y-0.5">
+            {dayItems.map((en) => {
               // The dedicated "nothing eaten" 0-kcal marker (see addNothingEaten above) isn't
               // editable through this path — 0 stays that action's job, not a typo to fix.
               const nothingEaten = en.kcal === 0;
@@ -256,43 +399,16 @@ function IntakeLog({ log, library, dayStatus = {}, setDayFlag, isDemo = false })
                       ? <InlineQty value={r0(en.kcal)} suffix="kcal"
                           onCommit={(n) => { if (isValidQty(n)) log.edit(en.id, { kcal: r0(n) }); }} />
                       : <span style={{ color: C.sub }} className="tabular-nums">{r0(en.kcal)} kcal</span>}
-                    <button onClick={() => log.remove(en.id)} style={{ color: C.faint }}><X size={12} /></button>
+                    {!isDemo && <button onClick={() => log.remove(en.id)} style={{ color: C.faint }} aria-label="Remove this entry"><X size={12} /></button>}
                   </span>
                 </div>
               );
             })}
           </div>
+        ) : (
+          <p style={{ color: C.faint }} className="text-xs py-2">No intake logged {isToday ? "today" : "this day"}.</p>
         )}
       </div>
-    );
-  };
-
-  return (
-    <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
-      <h2 className="font-medium mb-1">Intake log</h2>
-      <p style={{ color: C.faint }} className="text-xs mb-3">What you dispensed. Pick a saved food and enter grams, or enter kcal directly. Multiple entries per day sum.</p>
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 border rounded-xl p-2" style={{ borderColor: C.line }}>
-          <FoodSearch value={name} search={library.search}
-            onChangeName={(v) => { setName(v); setKcalG(0); }}
-            onPick={(food) => { setName(food.name); setKcalG(kcalPerG(food)); }} />
-        </div>
-        <div className="flex items-end gap-2">
-          <label className="block flex-1"><div style={{ color: C.sub }} className="text-xs mb-1">Date</div>
-            <input type="date" value={date} onChange={(ev) => setDate(ev.target.value)} style={{ borderColor: C.line, color: C.ink }} className="w-full border rounded-lg px-2.5 py-1.5 bg-white text-sm font-mono outline-none" /></label>
-          <div className="w-20"><Field label="Grams" suffix="g"><NumInput value={grams} onChange={setGrams} step="1" /></Field></div>
-          <div className="w-24"><Field label="kcal" suffix="kcal">
-            <NumInput value={kcal} onChange={setKcal} step="1" /></Field></div>
-          <button onClick={addEntry} style={{ background: C.spruce }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
-        </div>
-        {kcalG > 0 && <p style={{ color: C.faint }} className="text-xs">{name} ≈ {r0(kcalG * 1000)} kcal/kg — grams × that fills kcal automatically.</p>}
-        {!isDemo && (
-          <button onClick={addNothingEaten} style={{ color: C.sub }} className="text-xs font-mono inline-flex items-center gap-1 underline decoration-dotted">
-            nothing eaten today
-          </button>
-        )}
-      </div>
-      {days.length > 0 && <DayList days={days} renderDay={renderDay} />}
     </section>
   );
 }
