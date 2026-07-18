@@ -519,6 +519,33 @@ export async function syncAllWeights({ refreshToken, robots = [], sinceMs, petMa
 // shape (has a `robots` array) passes through unchanged. `null` (disconnected) passes through
 // too. Pure — called from AppState's hydrate() and importData() so both loading a saved
 // session and importing an old backup file land on the same shape.
+
+// Auto-match Whisker pets to Kilocat cats by exact name (trimmed, case-insensitive), only when
+// the match is unambiguous in BOTH directions — exactly one pet and exactly one cat carry that
+// name. Existing petMap entries (including an explicit null = "don't import") always win, and
+// anything ambiguous stays unmapped for the owner: a wrong guess here would route weigh-ins
+// into the wrong cat's log, which is the one mistake sync must never make.
+export function autoMatchPetsByName(pets = [], cats = [], petMap = {}) {
+  const norm = (s) => (s || "").trim().toLowerCase();
+  const catsByName = new Map();
+  for (const c of cats) {
+    const n = norm(c.name);
+    if (!n) continue;
+    catsByName.set(n, catsByName.has(n) ? null : c.id); // null marks a duplicated cat name
+  }
+  const petNameCounts = new Map();
+  for (const p of pets) petNameCounts.set(norm(p.name), (petNameCounts.get(norm(p.name)) || 0) + 1);
+  const out = { ...petMap };
+  for (const p of pets) {
+    if (out[p.petId] !== undefined) continue;
+    const n = norm(p.name);
+    if (!n || petNameCounts.get(n) !== 1) continue;
+    const catId = catsByName.get(n);
+    if (catId) out[p.petId] = catId;
+  }
+  return out;
+}
+
 export function migrateConnection(conn) {
   if (!conn) return conn;
   if (Array.isArray(conn.robots)) return conn; // already v2

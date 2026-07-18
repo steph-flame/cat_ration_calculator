@@ -5,7 +5,7 @@ import {
   parseWeightEvents, dedupeWeightEntries, decodeJwtPayload,
   login, refreshIdToken, listRobots, fetchWeightActivity,
   listRobotsLR5, fetchWeightActivityLR5, parseWeightEventsLR5, listAllRobots,
-  listPets, routeEntry, syncAllWeights, migrateConnection,
+  listPets, routeEntry, syncAllWeights, migrateConnection, autoMatchPetsByName,
   LR5_BASE, LR5_WEIGHT_SCALES, PET_PROFILE_ENDPOINT,
   COGNITO_CLIENT_ID, GRAPHQL_ENDPOINT, LitterRobotError,
 } from "./litterRobot.js";
@@ -649,5 +649,27 @@ describe("migrateConnection", () => {
   it("tolerates an old shape with no catId yet (never finished a target-cat pick)", () => {
     const migrated = migrateConnection({ refreshToken: "rt-1", serial: "LR4-123" });
     expect(migrated.robotMap).toEqual({ "LR4-123": null });
+  });
+});
+
+describe("autoMatchPetsByName", () => {
+  const cats = [{ id: "c1", name: "Mithril" }, { id: "c2", name: "Beans" }];
+  it("maps a pet to the cat with the same name, case-insensitively", () => {
+    expect(autoMatchPetsByName([{ petId: "p1", name: "  mithril " }], cats, {})).toEqual({ p1: "c1" });
+  });
+  it("leaves non-matching and blank names unmapped", () => {
+    expect(autoMatchPetsByName([{ petId: "p1", name: "Ziggy" }, { petId: "p2", name: "" }], cats, {})).toEqual({});
+  });
+  it("skips a name shared by two cats", () => {
+    const dupCats = [...cats, { id: "c3", name: "mithril" }];
+    expect(autoMatchPetsByName([{ petId: "p1", name: "Mithril" }], dupCats, {})).toEqual({});
+  });
+  it("skips a name shared by two pets", () => {
+    const pets = [{ petId: "p1", name: "Beans" }, { petId: "p2", name: "beans" }];
+    expect(autoMatchPetsByName(pets, cats, {})).toEqual({});
+  });
+  it("never overrides an existing mapping, including explicit don't-import null", () => {
+    const pets = [{ petId: "p1", name: "Mithril" }, { petId: "p2", name: "Beans" }];
+    expect(autoMatchPetsByName(pets, cats, { p1: "c2", p2: null })).toEqual({ p1: "c2", p2: null });
   });
 });

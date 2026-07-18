@@ -18,7 +18,7 @@ import { buildDemoCat } from "../lib/demoCat.js";
 import { toV2, migrateV1 } from "../lib/migrate.js";
 import {
   login as lrLogin, listAllRobots as lrListAllRobots, listPets as lrListPets,
-  syncAllWeights as lrSyncAllWeights, migrateConnection, FIRST_SYNC_DAYS,
+  syncAllWeights as lrSyncAllWeights, migrateConnection, autoMatchPetsByName, FIRST_SYNC_DAYS,
 } from "../lib/litterRobot.js";
 
 // Clean up legacy food data: strip "(dry)"/"(wet)", snap macro-identical near-dupes to their
@@ -380,6 +380,10 @@ export function AppProvider({ children }) {
       robotMap = Object.fromEntries((robots || []).map((r) => [r.serial, catId]));
       if (pets?.length === 1) petMap = { [pets[0].petId]: catId };
     }
+    // Beyond the single-cat case, matching names close the gap: Whisker's "Mithril" maps to
+    // the Kilocat cat named Mithril without a manual step (unambiguous matches only).
+    const realCats = realCatIds.map((id) => ({ id, name: catsState.cats[id]?.profile?.name }));
+    petMap = autoMatchPetsByName(pets, realCats, petMap);
     const conn = { refreshToken, lastSyncTs: null, weightScale: null, robots: robots || [], pets: pets || [], petMap, robotMap };
     setLitterRobotState(conn);
     return runLitterRobotSync(conn);
