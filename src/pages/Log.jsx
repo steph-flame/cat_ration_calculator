@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { ChevronLeft, ChevronDown, ChevronRight, Scale, Activity, NotebookPen, Plus, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Scale, Activity, NotebookPen, Plus, X } from "lucide-react";
 import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
 import { kcalPerG, kcalFromGrams, isValidQty } from "../lib/foods.js";
@@ -69,8 +69,10 @@ export default function Log() {
     if (dx < 0) goNext(); else goPrev();
   };
 
-  // Strip data: last ~30 days ending today (fewer if less history — see dayStripWindow),
-  // each day's total intake kcal + whether it's flagged incomplete, and its median weigh-in.
+  // Strip data: EVERY logged day (dayStripWindow's default is now unbounded — see
+  // lib/dayPager.js), each day's total intake kcal + whether it's flagged incomplete, and its
+  // median weigh-in. DayStrip itself decides how much of this to show at once (the range pill
+  // sets the zoom level) and renders it as a horizontally-scrollable strip.
   const stripDays = useMemo(() => dayStripWindow(minDate, todayStr), [minDate, todayStr]);
   const stripData = useMemo(() => {
     const intakeByDay = new Map(groupByDay(intakeLog.items).map((g) => [g.date, g.items]));
@@ -87,17 +89,6 @@ export default function Log() {
     }
     return out;
   }, [stripDays, intakeLog.items, weightLog.items, intakeDayStatus]);
-
-  // All days either log has ever touched, for the "all days" escape-hatch disclosure below —
-  // newest first, same convention as the old day-group list.
-  const allDays = useMemo(() => {
-    const set = new Set();
-    for (const e of weightLog.items) if (e?.date) set.add(e.date);
-    for (const e of intakeLog.items) if (e?.date) set.add(e.date);
-    return [...set].sort((a, b) => (a > b ? -1 : 1));
-  }, [weightLog.items, intakeLog.items]);
-  const weightByDayAll = useMemo(() => new Map(groupByDay(weightLog.items).map((g) => [g.date, g.items])), [weightLog.items]);
-  const intakeByDayAll = useMemo(() => new Map(groupByDay(intakeLog.items).map((g) => [g.date, g.items])), [intakeLog.items]);
 
   return (
     <div style={{ background: C.paper, color: C.ink, minHeight: "100%" }} className="w-full">
@@ -130,68 +121,48 @@ export default function Log() {
           <IntakeLog log={intakeLog} library={library} dayStatus={intakeDayStatus} setDayFlag={setIntakeDayFlag} isDemo={isDemo}
             viewedDate={viewedDate} isToday={isToday} />
         </div>
-
-        <AllDaysDisclosure days={allDays} weightByDay={weightByDayAll} intakeByDay={intakeByDayAll} onJump={jumpTo} />
       </div>
     </div>
   );
 }
 
 // The pager's header row: ‹ arrow, the day label ("Today"/"Yesterday"/else a short date), ›
-// arrow (disabled past today). Real labeled buttons (not divs) — arrow-key nav is documented
-// here via aria-label, the visible way to discover it is the disabled state at the future edge.
+// arrow (disabled past today). Real ~40px buttons with a visible card background + border —
+// they read as unmistakably clickable even on a laptop trackpad, not just an icon floating on
+// the page background. Arrow-key nav is documented here via aria-label; the visible way to
+// discover it is the disabled state at the future edge.
 function DayPagerHeader({ date, todayStr, onPrev, onNext, canPrev, canNext }) {
   const label = formatDayLabel(date, todayStr);
   return (
     <div className="flex items-center justify-between mb-4">
-      <button onClick={onPrev} disabled={!canPrev} aria-label="Previous day"
-        style={{ borderColor: C.line, color: C.spruce, opacity: canPrev ? 1 : 0.35 }}
-        className="border rounded-lg p-2 disabled:cursor-not-allowed"><ChevronLeft size={16} /></button>
+      <PagerArrow dir="prev" onClick={onPrev} disabled={!canPrev} ariaLabel="Previous day" />
       <div className="text-center leading-tight">
         <div className="font-semibold text-base">{label}</div>
         {label !== date && <div style={{ color: C.faint }} className="text-xs font-mono">{date}</div>}
       </div>
-      <button onClick={onNext} disabled={!canNext} aria-label="Next day (use the right arrow key, or swipe left)"
-        style={{ borderColor: C.line, color: C.spruce, opacity: canNext ? 1 : 0.35 }}
-        className="border rounded-lg p-2 disabled:cursor-not-allowed"><ChevronRight size={16} /></button>
+      <PagerArrow dir="next" onClick={onNext} disabled={!canNext} ariaLabel="Next day (use the right arrow key, or swipe left)" />
     </div>
   );
 }
 
-// The "all days" escape hatch: a collapsed compact list (day, weigh-in count, intake count +
-// total kcal), one row per day either log has ever touched. Replaces the old per-section
-// DayList as the way to scan/find/clear old data without the pager's one-day-at-a-time view —
-// clicking a row jumps the pager there instead of expanding in place.
-function AllDaysDisclosure({ days, weightByDay, intakeByDay, onJump }) {
-  const [open, setOpen] = useState(false);
-  if (days.length === 0) return null;
+// A single pager arrow: card background + a real border (not just a faint icon), ~40px
+// square so it reads as an unmistakable button target. Hover/focus swaps the border to the
+// accent color, the same "you're about to click something" cue the rest of the app uses on
+// its other interactive controls (e.g. WeightLog's method-select buttons below).
+function PagerArrow({ dir, onClick, disabled, ariaLabel }) {
+  const [hot, setHot] = useState(false);
+  const active = hot && !disabled;
+  const Icon = dir === "prev" ? ChevronLeft : ChevronRight;
   return (
-    <section style={{ background: C.card, borderColor: C.line }} className="border rounded-2xl p-4 sm:p-5 mb-4">
-      <button onClick={() => setOpen((o) => !o)} style={{ color: C.sub }} className="w-full flex items-center gap-1 text-xs font-mono">
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />} all days ({days.length})
-      </button>
-      {open && (
-        <div className="mt-2 space-y-0.5">
-          {days.map((d) => {
-            const w = weightByDay.get(d) || [];
-            const it = intakeByDay.get(d) || [];
-            const total = it.reduce((s, en) => s + num(en.kcal), 0);
-            return (
-              <button key={d} onClick={() => onJump(d)}
-                className="w-full flex items-center justify-between text-xs font-mono py-1 border-b hover:opacity-80"
-                style={{ borderColor: C.line, color: C.sub }}>
-                <span>{d}</span>
-                <span style={{ color: C.faint }}>
-                  {w.length ? `${w.length} read${w.length === 1 ? "" : "s"}` : "—"}
-                  {" · "}
-                  {it.length ? `${it.length} item${it.length === 1 ? "" : "s"} · ${r0(total)} kcal` : "—"}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </section>
+    <button
+      onClick={onClick} disabled={disabled} aria-label={ariaLabel}
+      onMouseEnter={() => setHot(true)} onMouseLeave={() => setHot(false)}
+      onFocus={() => setHot(true)} onBlur={() => setHot(false)}
+      style={{ background: C.card, borderColor: active ? C.spruce : C.line, color: C.ink, width: 40, height: 40, opacity: disabled ? 0.35 : 1 }}
+      className="border-2 rounded-xl flex items-center justify-center shrink-0 disabled:cursor-not-allowed focus-visible:ring-2"
+    >
+      <Icon size={20} />
+    </button>
   );
 }
 
