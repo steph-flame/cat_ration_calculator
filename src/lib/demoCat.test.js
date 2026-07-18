@@ -47,6 +47,9 @@ describe("buildDemoCat shape", () => {
     expect(demo.tr).toEqual(defaultTr());
     expect(demo.expSettings).toEqual(defaultExpSettings());
   });
+  it("never carries any incomplete-day flags — no controls on her page, nothing to flag", () => {
+    expect(demo.intakeDayStatus).toEqual({});
+  });
   it("gives Biscuit a name, a dob ~4 years back, neutered, and a gentle-trim profile", () => {
     expect(demo.profile.name).toBe("Biscuit");
     expect(demo.profile.neutered).toBe(true);

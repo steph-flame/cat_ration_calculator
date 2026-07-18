@@ -40,6 +40,7 @@ const sanitizeCat = (cat) => ({
   start: (cat?.start || []).map(cleanFood),
   weightLog: cat?.weightLog || [],
   intakeLog: (cat?.intakeLog || []).map(cleanName),
+  intakeDayStatus: cat?.intakeDayStatus || {},
   tr: cat?.tr || defaultTr(),
   expSettings: { ...defaultExpSettings(), ...(cat?.expSettings || {}) },
 });
@@ -204,6 +205,19 @@ export function AppProvider({ children }) {
   const weightLog = makeLogView("weightLog");
   const intakeLog = makeLogView("intakeLog");
 
+  // Per-day "incomplete" flags on the intake log: a day the owner marks as partially-logged
+  // (some meals forgotten) is treated by the estimator exactly like a day with no entries at
+  // all — see lib/expenditure.js's buildIntakeDayMap, the seam every estimator reads through.
+  // Only "incomplete" exists as a status; unflagging a day just deletes its key rather than
+  // storing an explicit "complete", so the map only ever grows with cats that actually use it.
+  const intakeDayStatus = activeCat.intakeDayStatus || {};
+  const setIntakeDayFlag = (date, flagged) => updateActiveCat((cat) => {
+    const next = { ...(cat.intakeDayStatus || {}) };
+    if (flagged) next[date] = "incomplete";
+    else delete next[date];
+    return { ...cat, intakeDayStatus: next };
+  });
+
   const tr = activeCat.tr;
   const setTr = (updater) => updateActiveCat((cat) => ({ ...cat, tr: typeof updater === "function" ? updater(cat.tr) : updater }));
   const expSettings = activeCat.expSettings;
@@ -229,11 +243,13 @@ export function AppProvider({ children }) {
   const expenditure = useMemo(() => {
     const w = weightLog.items.map((e) => ({ date: e.date, value: e.kg, method: e.method }));
     const i = intakeLog.items.map((e) => ({ date: e.date, value: e.kcal }));
-    const opts = { priorKcal: t.refs.maintain }; // cold-start the filter prior from the vet formula
+    // cold-start the filter prior from the vet formula; intakeDayStatus feeds every estimator
+    // through the same buildIntakeDayMap seam (see lib/expenditure.js).
+    const opts = { priorKcal: t.refs.maintain, intakeDayStatus };
     if (expSettings.algo === "v1") return estimateExpenditure(w, i, opts);
     if (expSettings.algo === "v2") return kalmanEstimateExpenditure(w, i, opts);
     return ucEstimateExpenditure(w, i, opts); // v3 (default)
-  }, [weightLog.items, intakeLog.items, expSettings.algo, t.refs.maintain]);
+  }, [weightLog.items, intakeLog.items, intakeDayStatus, expSettings.algo, t.refs.maintain]);
 
   // Profile helpers (unchanged semantics, just centralized).
   const ageUnit = p.ageUnit || "months";
@@ -392,7 +408,7 @@ export function AppProvider({ children }) {
   const value = {
     loaded, storageOk, p, set, setFactor, ageUnit, ageDisplay, dobMissing, setBcs, setPct,
     today, currentWeight, logWeight,
-    ration, start, library, weightLog, intakeLog, saveFood,
+    ration, start, library, weightLog, intakeLog, intakeDayStatus, setIntakeDayFlag, saveFood,
     tr, setTr, fridgeDays, setFridgeDays, expSettings, setExpSettings,
     skin, setSkin, unit, setUnit,
     t, expenditure,

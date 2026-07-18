@@ -159,6 +159,13 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
             <path d={bandPolygon(frame, (p) => p.e, xAt, eY)} fill={CHART.expenditure} opacity="0.2" />
             <path d={linePath(frame, (p) => p.kin, xAt, eY)} fill="none" stroke={CHART.intake} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
             {hasExp && <path d={linePath(frame, (p) => p.e, xAt, eY)} fill="none" stroke={CHART.expenditure} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+            {/* honesty markers: a day the estimator didn't trust (no entries that day, or
+                flagged incomplete) — hollow so it visually reads as "not counted", not as a
+                normal logged point. Only drawn where there IS a kin value to place it at;
+                a day with no entries at all is already a gap in the line above. */}
+            {frame.map((p, i) => p.kinImputed && p.kin != null && (
+              <circle key={p.date} cx={xAt(i)} cy={eY(p.kin)} r="2.5" fill="none" stroke={CHART.intake} strokeWidth="1.5" />
+            ))}
           </g>
 
           {/* analysis panel (optional): weight-change rate or caloric balance */}
@@ -189,7 +196,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
 
           {/* end-of-line direct labels */}
           <EndDot x={xAt(n - 1)} y={wY(wOf(last))} color={CHART.weight} label={`${r1(wOf(last))} ${weightLabel(unit)}`} fs={fs} />
-          {last.kin != null && <EndDot x={xAt(n - 1)} y={eY(last.kin)} color={CHART.intake} label={`${r0(last.kin)}`} fs={fs} below />}
+          {last.kin != null && <EndDot x={xAt(n - 1)} y={eY(last.kin)} color={CHART.intake} label={`${r0(last.kin)}`} fs={fs} below hollow={last.kinImputed} />}
           {hasExp && last.e != null && <EndDot x={xAt(n - 1)} y={eY(last.e)} color={CHART.expenditure} label={`${r0(last.e)}`} fs={fs} />}
 
           {/* x-axis */}
@@ -202,7 +209,9 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
             <g pointerEvents="none">
               <line x1={hx} x2={hx} y1={wTop} y2={xAxisY} stroke={C.sub} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
               {wOf(hp) != null && <circle cx={hx} cy={wY(wOf(hp))} r="3.5" fill={CHART.weight} stroke="#fff" strokeWidth="1.5" />}
-              {hp.kin != null && <circle cx={hx} cy={eY(hp.kin)} r="3.5" fill={CHART.intake} stroke="#fff" strokeWidth="1.5" />}
+              {hp.kin != null && (hp.kinImputed
+                ? <circle cx={hx} cy={eY(hp.kin)} r="3.5" fill="none" stroke={CHART.intake} strokeWidth="2" />
+                : <circle cx={hx} cy={eY(hp.kin)} r="3.5" fill={CHART.intake} stroke="#fff" strokeWidth="1.5" />)}
               {hasExp && hp.e != null && <circle cx={hx} cy={eY(hp.e)} r="3.5" fill={CHART.expenditure} stroke="#fff" strokeWidth="1.5" />}
               {showAnalysis && hA != null && <circle cx={hx} cy={bY(hA)} r="3.5" fill={C.ink} stroke="#fff" strokeWidth="1.5" />}
             </g>
@@ -215,7 +224,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
             className="border rounded-lg px-2 py-1.5 text-xs shadow-sm font-mono whitespace-nowrap">
             <div style={{ color: C.sub }} className="mb-0.5">{fmtDate(hp.date, showYear)}</div>
             <TipRow color={CHART.weight} label="weight" value={wOf(hp) != null ? `${r1(wOf(hp))} ${weightLabel(unit)}` : "—"} />
-            <TipRow color={CHART.intake} label="in" value={hp.kin != null ? `${r0(hp.kin)} kcal` : "—"} />
+            <TipRow color={CHART.intake} label="in" value={hp.kin != null ? `${r0(hp.kin)} kcal${hp.kinImputed ? " (excluded)" : ""}` : "—"} />
             {hasExp && <TipRow color={CHART.expenditure} label="burns" value={hp.e != null ? `${r0(hp.e)} kcal` : "—"} />}
             {showAnalysis && isRate && <TipRow color={C.ink} label="rate" value={hA != null ? `${hA > 0 ? "+" : ""}${r1(hA)} %/wk · ${r0(hRateW.value)} ${hRateW.unit}` : "—"} />}
             {showAnalysis && !isRate && <TipRow color={C.ink} label="balance" value={hDef != null ? `${hDef > 0 ? "+" : ""}${r0(hDef)} kcal · ${r0(hRate.value)} ${hRate.unit}` : "—"} />}
@@ -229,12 +238,13 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
         {hasExp && <LegendChip color={CHART.expenditure} label="est. expenditure" band />}
         {showAnalysis && <LegendChip color={C.ink} label={isRate ? "weight-change rate" : "balance (in − burns)"} />}
         {showAnalysis && isRate && <LegendChip color={C.ok} label={`safe ${RATE.min}–${RATE.max}%/wk`} band />}
+        {frame.some((p) => p.kinImputed && p.kin != null) && <LegendChip color={CHART.intake} label="imputed / excluded" hollow />}
       </div>
 
       {/* screen-reader / no-pointer data fallback for the SVG */}
       <table className="sr-only">
         <caption>{summary}</caption>
-        <thead><tr><th>Date</th><th>Weight ({weightLabel(unit)})</th><th>Calories in (kcal)</th>{hasExp && <th>Est. expenditure (kcal)</th>}</tr></thead>
+        <thead><tr><th>Date</th><th>Weight ({weightLabel(unit)})</th><th>Calories in (kcal)</th>{hasExp && <th>Est. expenditure (kcal)</th>}<th>Counted in estimate</th></tr></thead>
         <tbody>
           {frame.map((p) => (
             <tr key={p.date}>
@@ -242,6 +252,7 @@ export default function TimelineChart({ frame, range, onRange, ranges, unit = "k
               <td>{wOf(p) != null ? r1(wOf(p)) : "—"}</td>
               <td>{p.kin != null ? r0(p.kin) : "—"}</td>
               {hasExp && <td>{p.e != null ? r0(p.e) : "—"}</td>}
+              <td>{p.kin == null ? "—" : p.kinImputed ? "no — excluded" : "yes"}</td>
             </tr>
           ))}
         </tbody>
@@ -263,10 +274,10 @@ function RangeRow({ range, onRange, ranges }) {
   );
 }
 
-function EndDot({ x, y, color, label, fs = 1, below = false }) {
+function EndDot({ x, y, color, label, fs = 1, below = false, hollow = false }) {
   return (
     <g>
-      <circle cx={x} cy={y} r="3" fill={color} stroke="#fff" strokeWidth="1.5" />
+      <circle cx={x} cy={y} r="3" fill={hollow ? "none" : color} stroke={hollow ? color : "#fff"} strokeWidth={hollow ? "1.5" : "1.5"} />
       <text x={x - 6} y={y + (below ? 10 * fs : -6)} textAnchor="end" fontSize={9 * fs} fontFamily="monospace" fill={color} fontWeight="600">{label}</text>
     </g>
   );
@@ -282,10 +293,14 @@ function TipRow({ color, label, value }) {
   );
 }
 
-function LegendChip({ color, label, band }) {
+function LegendChip({ color, label, band, hollow }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span style={{ background: color, opacity: band ? 0.5 : 1 }} className="inline-block w-4 h-[3px] rounded-full" />
+      {hollow ? (
+        <span style={{ borderColor: color }} className="inline-block w-2 h-2 rounded-full border" />
+      ) : (
+        <span style={{ background: color, opacity: band ? 0.5 : 1 }} className="inline-block w-4 h-[3px] rounded-full" />
+      )}
       {label}
     </span>
   );

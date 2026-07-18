@@ -72,6 +72,22 @@ describe("buildDailyFrame", () => {
     expect(historySpanDays(trend)).toBe(3);
     expect(historySpanDays([])).toBe(0);
   });
+  it("marks a day with no intake entries as kinImputed (nothing to render solid)", () => {
+    const frame = buildDailyFrame(trend, intake, 365);
+    expect(frame[1].kin).toBeNull();
+    expect(frame[1].kinImputed).toBe(true);
+  });
+  it("a normal logged day is NOT kinImputed", () => {
+    const frame = buildDailyFrame(trend, intake, 365);
+    expect(frame[0].kinImputed).toBe(false);
+    expect(frame[2].kinImputed).toBe(false);
+  });
+  it("a day flagged incomplete is kinImputed even though it has a real logged kin value", () => {
+    const frame = buildDailyFrame(trend, intake, 365, { "2026-06-01": "incomplete" });
+    expect(frame[0].kin).toBe(220); // still shows what was actually logged
+    expect(frame[0].kinImputed).toBe(true); // but flagged as excluded from the estimate
+    expect(frame[2].kinImputed).toBe(false); // unflagged day unaffected
+  });
 });
 
 describe("weightChangeRate", () => {

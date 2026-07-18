@@ -152,3 +152,28 @@ describe("validateImport tolerates/checks the litterRobot connection field", () 
     expect(validateImport({ ...validV2Export(), litterRobot: { refreshToken: "rt-1", robots: [], petMap: { "PET-1": 5 } } })).toBe(false);
   });
 });
+
+describe("validateImport tolerates/checks intakeDayStatus (per-day incomplete flags)", () => {
+  it("accepts a blob with no intakeDayStatus field at all (an export from before this feature)", () => {
+    expect(validateImport(validExport())).toBe(true);
+    expect(validateImport(validV2Export())).toBe(true);
+  });
+  it("accepts a well-formed intakeDayStatus map", () => {
+    expect(validateImport({ ...validExport(), intakeDayStatus: { "2026-01-02": "incomplete" } })).toBe(true);
+  });
+  it("accepts an empty intakeDayStatus map", () => {
+    expect(validateImport({ ...validExport(), intakeDayStatus: {} })).toBe(true);
+  });
+  it("rejects intakeDayStatus that isn't an object, or whose values aren't the recognized status", () => {
+    expect(validateImport({ ...validExport(), intakeDayStatus: "nope" })).toBe(false);
+    expect(validateImport({ ...validExport(), intakeDayStatus: ["incomplete"] })).toBe(false);
+    expect(validateImport({ ...validExport(), intakeDayStatus: { "2026-01-02": "complete" } })).toBe(false);
+    expect(validateImport({ ...validExport(), intakeDayStatus: { "2026-01-02": true } })).toBe(false);
+  });
+  it("checks it inside a v2 cat entry too", () => {
+    const cats = { ...validV2Export().cats, "cat-1": { ...validV2Export().cats["cat-1"], intakeDayStatus: { "2026-01-02": "incomplete" } } };
+    expect(validateImport({ ...validV2Export(), cats })).toBe(true);
+    const badCats = { ...validV2Export().cats, "cat-1": { ...validV2Export().cats["cat-1"], intakeDayStatus: { "2026-01-02": "bogus" } } };
+    expect(validateImport({ ...validV2Export(), cats: badCats })).toBe(false);
+  });
+});

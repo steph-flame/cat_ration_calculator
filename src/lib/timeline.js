@@ -14,21 +14,33 @@ export const RANGES = [
 // trend: [{ date, kg, e?, sd? }] over the full history (from an estimator).
 // intakeEntries: [{ date, value: kcal }] (summed per day here).
 // rangeDays: clip to the last N days ending at the most recent trend date.
-// → [{ date, w, kin, e, sd }] one per day in range (kin/e/sd may be null).
-export function buildDailyFrame(trend, intakeEntries, rangeDays) {
+// intakeDayStatus: the cat's { "YYYY-MM-DD": "incomplete" } flags (see lib/expenditure.js's
+// buildIntakeDayMap, the same seam the estimator reads through) — used only to mark
+// `kinImputed` here, never to change what `kin` displays: a flagged day still shows its real
+// logged total (the owner did log something), just flagged as excluded from the estimate, so
+// the chart doesn't quietly imply that number was trusted.
+// → [{ date, w, kin, kinImputed, e, sd }] one per day in range (kin/e/sd may be null).
+export function buildDailyFrame(trend, intakeEntries, rangeDays, intakeDayStatus = {}) {
   if (!trend || trend.length === 0) return [];
   const intakeByDay = new Map(dailyReduce(intakeEntries, (v) => v.reduce((a, b) => a + b, 0)).map((d) => [d.date, d.value]));
   const last = trend[trend.length - 1].date;
   const cutoff = rangeDays ? addDays(last, -(rangeDays - 1)) : trend[0].date;
   return trend
     .filter((p) => p.date >= cutoff)
-    .map((p) => ({
-      date: p.date,
-      w: p.kg ?? null,
-      e: p.e ?? null,
-      sd: p.sd ?? null,
-      kin: intakeByDay.has(p.date) ? intakeByDay.get(p.date) : null,
-    }));
+    .map((p) => {
+      const hasEntries = intakeByDay.has(p.date);
+      return {
+        date: p.date,
+        w: p.kg ?? null,
+        e: p.e ?? null,
+        sd: p.sd ?? null,
+        kin: hasEntries ? intakeByDay.get(p.date) : null,
+        // true when the estimator did NOT trust this day's number: either no entries at all
+        // (already null, so nothing to draw hollow) or entries exist but the day is flagged
+        // incomplete (a real point the chart should still show, just not as solid/trusted).
+        kinImputed: !hasEntries || intakeDayStatus?.[p.date] === "incomplete",
+      };
+    });
 }
 
 // How many days of history exist (for enabling/disabling range buttons).

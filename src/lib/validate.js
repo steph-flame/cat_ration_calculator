@@ -15,6 +15,11 @@ const isFoodEntry = (f) => isPlainObject(f) && typeof f.name === "string" && typ
 const isWeightEntry = (e) => isPlainObject(e) && typeof e.date === "string" && typeof e.kg === "number";
 const isIntakeEntry = (e) => isPlainObject(e) && typeof e.date === "string" && typeof e.kcal === "number";
 
+// Per-day "incomplete" flags: { "YYYY-MM-DD": "incomplete" }. Only that one status exists so
+// far — absent for a day (or the whole field absent, on any export older than this feature)
+// means "trust the logged entries as-is".
+const isIntakeDayStatus = (m) => isPlainObject(m) && Object.values(m).every((v) => v === "incomplete");
+
 // Fields that live on one cat: profile, ration, start, weightLog, intakeLog, tr, expSettings.
 // Shared by both the top-level v1 shape and each per-cat entry inside a v2 blob's `cats` map.
 function validateCatShape(d) {
@@ -24,6 +29,7 @@ function validateCatShape(d) {
   if (d.start !== undefined && !arrOf(d.start, isFoodEntry)) return false;
   if (d.weightLog !== undefined && !arrOf(d.weightLog, isWeightEntry)) return false;
   if (d.intakeLog !== undefined && !arrOf(d.intakeLog, isIntakeEntry)) return false;
+  if (d.intakeDayStatus !== undefined && !isIntakeDayStatus(d.intakeDayStatus)) return false;
   if (d.tr !== undefined && !isPlainObject(d.tr)) return false;
   if (d.expSettings !== undefined && !isPlainObject(d.expSettings)) return false;
   return true;

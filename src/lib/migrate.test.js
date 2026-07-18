@@ -8,6 +8,7 @@ const v1Blob = () => ({
   library: [{ id: "c", name: "Food C", mode: "perUnit", kcalPerUnit: 60, gramsPerUnit: 79 }],
   weightLog: [{ id: "d", date: "2026-01-01", kg: 4.4, method: "petScale", source: "manual" }],
   intakeLog: [{ id: "e", date: "2026-01-01", kcal: 250, grams: 60, name: "Food A" }],
+  intakeDayStatus: { "2026-01-01": "incomplete" },
   tr: { on: true, days: 10, timelineUnit: "kcal" },
   fridgeDays: 5,
   expSettings: { unit: "lb", algo: "v2" },
@@ -27,6 +28,7 @@ describe("migrateV1", () => {
     expect(cat.start).toEqual(src.start);
     expect(cat.weightLog).toEqual(src.weightLog);
     expect(cat.intakeLog).toEqual(src.intakeLog);
+    expect(cat.intakeDayStatus).toEqual(src.intakeDayStatus);
     expect(cat.tr).toEqual(src.tr);
     expect(cat.expSettings).toEqual(src.expSettings);
     // library and fridgeDays stay shared, outside the per-cat bucket

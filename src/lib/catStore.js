@@ -42,6 +42,7 @@ export const freshCatState = () => ({
   start: [{ ...blankFood(), pct: 100 }],
   weightLog: [],
   intakeLog: [],
+  intakeDayStatus: {},
   tr: defaultTr(),
   expSettings: defaultExpSettings(),
 });

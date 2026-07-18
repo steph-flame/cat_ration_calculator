@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateExpenditure, floorSdKcal, WEIGH_METHODS, DEFAULT_METHOD } from "./expenditure.js";
+import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure, buildIntakeDayMap, floorSdKcal, WEIGH_METHODS, DEFAULT_METHOD } from "./expenditure.js";
 import { addDays } from "./series.js";
 
 // Build a synthetic history: constant daily intake, weight moving at the exact rate that
@@ -116,5 +116,68 @@ describe("weigh-method metadata (contract for precision-weighting later)", () =>
   });
   it("the default method exists", () => {
     expect(WEIGH_METHODS[DEFAULT_METHOD]).toBeTruthy();
+  });
+});
+
+describe("buildIntakeDayMap (intake day-status seam)", () => {
+  it("keeps a real logged day as-is", () => {
+    const map = buildIntakeDayMap([{ date: "2026-01-01", value: 100 }]);
+    expect(map.get("2026-01-01")).toBe(100);
+  });
+  it("keeps an explicit zero-kcal day — a real fast day, not imputed", () => {
+    const map = buildIntakeDayMap([{ date: "2026-01-02", value: 0 }]);
+    expect(map.has("2026-01-02")).toBe(true);
+    expect(map.get("2026-01-02")).toBe(0);
+  });
+  it("a day with no entries at all is simply absent from the map", () => {
+    const map = buildIntakeDayMap([{ date: "2026-01-01", value: 100 }]);
+    expect(map.has("2026-01-02")).toBe(false);
+  });
+  it("drops a flagged-incomplete day even though it has entries — indistinguishable from missing", () => {
+    const map = buildIntakeDayMap(
+      [{ date: "2026-01-01", value: 100 }, { date: "2026-01-02", value: 80 }],
+      { "2026-01-02": "incomplete" },
+    );
+    expect(map.has("2026-01-01")).toBe(true);
+    expect(map.has("2026-01-02")).toBe(false);
+  });
+  it("a flag on a day with no entries is harmless", () => {
+    const map = buildIntakeDayMap([{ date: "2026-01-01", value: 100 }], { "2026-01-09": "incomplete" });
+    expect([...map.keys()]).toEqual(["2026-01-01"]);
+  });
+});
+
+describe("estimators treat a flagged-incomplete day exactly like a missing day", () => {
+  it("estimateExpenditure (v1): flagging a day matches deleting its entries", () => {
+    const { weightEntries, intakeEntries, rho } = history({ intake: 200, maintenance: 250 });
+    const flagDate = intakeEntries[10].date;
+    const flagged = estimateExpenditure(weightEntries, intakeEntries, { rho, intakeDayStatus: { [flagDate]: "incomplete" } });
+    const deleted = estimateExpenditure(weightEntries, intakeEntries.filter((e) => e.date !== flagDate), { rho });
+    expect(flagged.kcal).toBeCloseTo(deleted.kcal, 6);
+    expect(flagged.missingIntake).toBeCloseTo(deleted.missingIntake, 6);
+  });
+  it("kalmanEstimateExpenditure (v2): same equivalence", () => {
+    const { weightEntries, intakeEntries, rho } = history({ days: 30, intake: 200, maintenance: 250 });
+    const flagDate = intakeEntries[10].date;
+    const flagged = kalmanEstimateExpenditure(weightEntries, intakeEntries, { rho, intakeDayStatus: { [flagDate]: "incomplete" } });
+    const deleted = kalmanEstimateExpenditure(weightEntries, intakeEntries.filter((e) => e.date !== flagDate), { rho });
+    expect(flagged.missingIntake).toBeCloseTo(deleted.missingIntake, 6);
+  });
+  it("ucEstimateExpenditure (v3): same equivalence", () => {
+    const { weightEntries, intakeEntries, rho } = history({ days: 30, intake: 200, maintenance: 250 });
+    const flagDate = intakeEntries[10].date;
+    const flagged = ucEstimateExpenditure(weightEntries, intakeEntries, { rho, intakeDayStatus: { [flagDate]: "incomplete" } });
+    const deleted = ucEstimateExpenditure(weightEntries, intakeEntries.filter((e) => e.date !== flagDate), { rho });
+    expect(flagged.missingIntake).toBeCloseTo(deleted.missingIntake, 6);
+  });
+  it("a genuine zero-kcal day is NOT imputed — it pulls the mean down for real (unlike a missing day)", () => {
+    const days = 20, start = "2026-01-01";
+    const weightEntries = Array.from({ length: days }, (_, d) => ({ date: addDays(start, d), value: 5.0 })); // stable weight
+    const intakeEntries = Array.from({ length: days }, (_, d) => ({ date: addDays(start, d), value: d === 5 ? 0 : 200 }));
+    const withZero = estimateExpenditure(weightEntries, intakeEntries, { minDays: 10 });
+    const missingThatDay = estimateExpenditure(weightEntries, intakeEntries.filter((_, i) => i !== 5), { minDays: 10 });
+    expect(withZero.missingIntake).toBe(0); // every day present, including the zero day
+    expect(missingThatDay.missingIntake).toBeGreaterThan(0);
+    expect(withZero.kcal).toBeLessThan(missingThatDay.kcal); // the real zero drags the mean down; imputation would not
   });
 });

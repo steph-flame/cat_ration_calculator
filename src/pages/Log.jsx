@@ -6,6 +6,7 @@ import { kcalPerG } from "../lib/foods.js";
 import { groupByDay, median } from "../lib/series.js";
 import { WEIGH_METHODS, DEFAULT_METHOD, WEIGH_SOURCES } from "../lib/expenditure.js";
 import { toDisplayWeight, fromDisplayWeight, weightLabel } from "../lib/units.js";
+import { DEMO_CAT_ID } from "../lib/catStore.js";
 import { useApp } from "../state/AppState.jsx";
 import FoodSearch from "../components/FoodSearch.jsx";
 import { Field, NumInput, Note } from "../components/primitives.jsx";
@@ -16,7 +17,8 @@ const methodLabel = (m) => (WEIGH_METHODS[m] || WEIGH_METHODS[DEFAULT_METHOD]).l
 const INITIAL_DAYS = 5;
 
 export default function Log() {
-  const { p, weightLog, intakeLog, library, expSettings, setExpSettings, unit } = useApp();
+  const { p, weightLog, intakeLog, library, expSettings, setExpSettings, unit, intakeDayStatus, setIntakeDayFlag, activeCatId } = useApp();
+  const isDemo = activeCatId === DEMO_CAT_ID; // Biscuit's data is regenerated fresh every time — every mutation seam no-ops, so hide the controls rather than show a dead button
 
   return (
     <div style={{ background: C.paper, color: C.ink, minHeight: "100%" }} className="w-full">
@@ -39,7 +41,7 @@ export default function Log() {
         </div>
 
         <WeightLog log={weightLog} unit={unit} lastMethod={expSettings.lastMethod || DEFAULT_METHOD} onMethod={(m) => setExpSettings({ lastMethod: m })} />
-        <IntakeLog log={intakeLog} library={library} />
+        <IntakeLog log={intakeLog} library={library} dayStatus={intakeDayStatus} setDayFlag={setIntakeDayFlag} isDemo={isDemo} />
       </div>
     </div>
   );
@@ -135,7 +137,7 @@ function WeightLog({ log, unit, lastMethod, onMethod }) {
 }
 
 /* ---------- intake log ---------- */
-function IntakeLog({ log, library }) {
+function IntakeLog({ log, library, dayStatus = {}, setDayFlag, isDemo = false }) {
   const [date, setDate] = useState(today);
   const [name, setName] = useState("");
   const [kcalG, setKcalG] = useState(0);
@@ -154,18 +156,33 @@ function IntakeLog({ log, library }) {
       setGrams(""); setKcal("");
     }
   };
+  // A true zero day (fasted/refused food) — an explicit 0-kcal entry, so the estimator reads
+  // it as real data, not a missing/imputed day (see lib/expenditure.js's buildIntakeDayMap).
+  // Uses whatever date is set in the form above, so a missed day can be logged retroactively.
+  const addNothingEaten = () => log.add({ date, kcal: 0, grams: null, name: "nothing eaten" });
   const toggleDay = (d) => setOpen((s) => { const n = new Set(s); n.has(d) ? n.delete(d) : n.add(d); return n; });
 
   const renderDay = ({ date: d, items }) => {
     const total = items.reduce((s, en) => s + num(en.kcal), 0);
     const isOpen = open.has(d);
+    const flagged = dayStatus[d] === "incomplete";
     return (
       <div key={d}>
-        <button onClick={() => toggleDay(d)} className="w-full flex items-center justify-between text-sm font-mono py-1 border-b" style={{ borderColor: C.line }}>
-          <span style={{ color: C.sub }} className="inline-flex items-center gap-1">{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{d}
-            <span style={{ color: C.faint }} className="text-xs">· {items.length} item{items.length === 1 ? "" : "s"}</span></span>
-          <span style={{ color: C.ink }} className="tabular-nums">{r0(total)} kcal</span>
-        </button>
+        <div className="w-full flex items-center justify-between text-sm font-mono py-1 border-b" style={{ borderColor: C.line }}>
+          <button onClick={() => toggleDay(d)} style={{ color: C.sub }} className="inline-flex items-center gap-1 min-w-0">
+            {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{d}
+            <span style={{ color: C.faint }} className="text-xs">· {items.length} item{items.length === 1 ? "" : "s"}</span>
+          </button>
+          <span className="flex items-center gap-2 shrink-0">
+            {!isDemo && (
+              <button onClick={() => setDayFlag(d, !flagged)} aria-pressed={flagged}
+                style={{ color: flagged ? C.amber : C.faint }} className="text-[11px] font-mono underline decoration-dotted">
+                {flagged ? "incomplete — excluded from estimate" : "mark incomplete"}
+              </button>
+            )}
+            <span style={{ color: C.ink }} className="tabular-nums">{r0(total)} kcal</span>
+          </span>
+        </div>
         {isOpen && (
           <div className="pl-4 py-1 space-y-0.5">
             {items.map((en) => (
@@ -200,6 +217,11 @@ function IntakeLog({ log, library }) {
           <button onClick={addEntry} style={{ background: C.spruce }} className="rounded-lg p-2 text-white shrink-0 mb-0.5"><Plus size={16} /></button>
         </div>
         {kcalG > 0 && <p style={{ color: C.faint }} className="text-xs">{name} ≈ {r0(kcalG * 1000)} kcal/kg — grams × that fills kcal automatically.</p>}
+        {!isDemo && (
+          <button onClick={addNothingEaten} style={{ color: C.sub }} className="text-xs font-mono inline-flex items-center gap-1 underline decoration-dotted">
+            nothing eaten today
+          </button>
+        )}
       </div>
       {days.length > 0 && <DayList days={days} renderDay={renderDay} />}
     </section>

@@ -7,7 +7,7 @@
 
 import { uid } from "./util.js";
 
-const CAT_FIELDS = ["profile", "ration", "start", "weightLog", "intakeLog", "tr", "expSettings"];
+const CAT_FIELDS = ["profile", "ration", "start", "weightLog", "intakeLog", "intakeDayStatus", "tr", "expSettings"];
 
 // Wrap a v1 blob as a v2 blob with that data as its one cat. Preserves every field it's
 // given verbatim — fabricates nothing beyond a fresh cat id. Used both for the one-time

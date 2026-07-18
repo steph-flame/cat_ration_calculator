@@ -32,6 +32,31 @@ export const KCAL_PER_KG = 7800;
 export const DEFAULTS = { rho: KCAL_PER_KG, windowDays: 28, minDays: 10, alpha: 0.25, maxMissing: 0.5 };
 const V1_WEIGHT_SIGMA = 0.03; // kg, a per-weigh-in noise floor so the v1 band can't read ±0
 
+/* ==================== intake day-status seam ==================== */
+// Three states, previously conflated: (a) no entries logged that day — already imputed by
+// every estimator below (excluded from the mean / filled from it); (b) a true zero-intake
+// day (cat fasted/refused food) — an explicit 0-kcal entry, which sums to 0 and is REAL data,
+// not missing; (c) a partially-logged day (some meals logged, some forgotten) — silently read
+// as a complete low-intake day and biased the estimate downward, with no way to say "don't
+// trust this one."
+//
+// `flags` is a cat's intakeDayStatus map: { "YYYY-MM-DD": "incomplete" } (the only status that
+// exists so far — absent for a day means "trust the entries as logged"). This is the single
+// seam every estimator below reads through instead of building iByDay from raw entries
+// directly: a day's value is the sum of its entries UNLESS that day is flagged, in which case
+// it's dropped entirely so it's indistinguishable from a day with no entries at all — the
+// existing imputation (mean-fill / exclusion) picks it up exactly like any other missing day.
+// A flag on a day with no entries is harmless: there's nothing in `daily` to drop.
+export function buildIntakeDayMap(intakeEntries, flags = {}) {
+  const daily = dailyReduce(intakeEntries, (v) => v.reduce((a, b) => a + b, 0));
+  const map = new Map();
+  for (const { date, value } of daily) {
+    if (flags && flags[date] === "incomplete") continue; // treated as missing, not zero
+    map.set(date, value);
+  }
+  return map;
+}
+
 // How a weigh-in was measured. `sigmaKg` is the rough per-reading measurement noise —
 // captured now, and reserved for precision-weighting (WLS) in the v2 filter. Mixing
 // methods risks a systematic between-method offset that looks like a weight jump, so the
@@ -50,10 +75,9 @@ export const WEIGH_SOURCES = { manual: "manual", litterRobot: "litter-robot" };
 // weightEntries: [{ date, value: kg }]   intakeEntries: [{ date, value: kcal }]
 // (multiple per day are fine — weight is median-reduced, intake summed.)
 export function estimateExpenditure(weightEntries = [], intakeEntries = [], opts = {}) {
-  const { rho, windowDays, minDays, alpha, maxMissing } = { ...DEFAULTS, ...opts };
+  const { rho, windowDays, minDays, alpha, maxMissing, intakeDayStatus } = { ...DEFAULTS, ...opts };
 
   const dailyW = dailyReduce(weightEntries, median);
-  const dailyI = dailyReduce(intakeEntries, (v) => v.reduce((a, b) => a + b, 0));
 
   const empty = { enoughData: false, kcal: null, sd: null, low: null, high: null,
     trendWeightKg: dailyW.length ? dailyW[dailyW.length - 1].value : null,
@@ -81,7 +105,7 @@ export function estimateExpenditure(weightEntries = [], intakeEntries = [], opts
 
   // Intake: mean over the days we actually logged in the window; track how sparse it was.
   const winDays = enumerateDays(winStart, last);
-  const iByDay = new Map(dailyI.map((d) => [d.date, d.value]));
+  const iByDay = buildIntakeDayMap(intakeEntries, intakeDayStatus);
   const present = winDays.filter((d) => iByDay.has(d));
   const missingIntake = 1 - present.length / winDays.length;
   const meanIntake = mean(present.map((d) => iByDay.get(d)));
@@ -170,8 +194,7 @@ export function kalmanEstimateExpenditure(weightEntries = [], intakeEntries = []
 
   const first = dW[0].date, last = dW[dW.length - 1].date;
   const days = enumerateDays(first, last);
-  const dailyI = dailyReduce(intakeEntries, (v) => v.reduce((a, b) => a + b, 0));
-  const iByDay = new Map(dailyI.map((d) => [d.date, d.value]));
+  const iByDay = buildIntakeDayMap(intakeEntries, P.intakeDayStatus);
   const present = days.filter((d) => iByDay.has(d));
   const missingIntake = 1 - present.length / days.length;
   const meanI = present.length ? mean(present.map((d) => iByDay.get(d))) : 0;
@@ -257,8 +280,7 @@ export function ucEstimateExpenditure(weightEntries = [], intakeEntries = [], op
 
   const first = dW[0].date, last = dW[dW.length - 1].date;
   const days = enumerateDays(first, last);
-  const dailyI = dailyReduce(intakeEntries, (v) => v.reduce((a, b) => a + b, 0));
-  const iByDay = new Map(dailyI.map((d) => [d.date, d.value]));
+  const iByDay = buildIntakeDayMap(intakeEntries, P.intakeDayStatus);
   const present = days.filter((d) => iByDay.has(d));
   const missingIntake = 1 - present.length / days.length;
   const meanI = present.length ? mean(present.map((d) => iByDay.get(d))) : 0;

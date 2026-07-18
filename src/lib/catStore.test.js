@@ -29,6 +29,7 @@ describe("freshCatState / freshProfile", () => {
     expect(c.start[0].pct).toBe(100);
     expect(c.weightLog).toEqual([]);
     expect(c.intakeLog).toEqual([]);
+    expect(c.intakeDayStatus).toEqual({});
   });
 });
 

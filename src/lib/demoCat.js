@@ -123,6 +123,7 @@ export function buildDemoCat(today) {
     start: ration.map((f) => ({ ...f, id: nextId() })),
     weightLog: buildWeightLog(rand, startDate, nextId),
     intakeLog: buildIntakeLog(rand, startDate, names, nextId),
+    intakeDayStatus: {}, // Biscuit's log is always complete — never flagged, never mutated
     tr: defaultTr(),
     expSettings: defaultExpSettings(),
   };
