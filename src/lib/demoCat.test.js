@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildDemoCat, DEMO_CAT_ID } from "./demoCat.js";
 import { freshCatState, defaultTr, defaultExpSettings, DEMO_CAT_ID as CATSTORE_DEMO_ID } from "./catStore.js";
 import { validateImport } from "./validate.js";
+import { localDateOf } from "./series.js";
 
 const TODAY = "2026-07-14";
 
@@ -66,6 +67,27 @@ describe("buildDemoCat shape", () => {
     const lrCount = demo.weightLog.filter((e) => e.method === "litterRobot").length;
     expect(lrCount).toBeGreaterThan(demo.weightLog.length / 2); // "mostly" Litter-Robot
   });
+  it("gives every weigh-in a `ts` scattered 6am-11pm local, agreeing with its `date`", () => {
+    for (const e of demo.weightLog) {
+      expect(typeof e.ts).toBe("number");
+      expect(e.date).toBe(localDateOf(e.ts)); // ts's local day matches the entry's date key
+      const hour = new Date(e.ts).getHours() + new Date(e.ts).getMinutes() / 60;
+      expect(hour).toBeGreaterThanOrEqual(6);
+      expect(hour).toBeLessThanOrEqual(23);
+    }
+  });
+  it("orders each day's reads chronologically by ts", () => {
+    const byDate = new Map();
+    for (const e of demo.weightLog) {
+      if (!byDate.has(e.date)) byDate.set(e.date, []);
+      byDate.get(e.date).push(e);
+    }
+    for (const reads of byDate.values()) {
+      const tss = reads.map((e) => e.ts);
+      expect(tss).toEqual([...tss].sort((a, b) => a - b));
+    }
+  });
+
   it("weight trends down from ~4.95 to ~4.62 kg", () => {
     const byDate = [...demo.weightLog].sort((a, b) => (a.date < b.date ? -1 : 1));
     expect(byDate[0].kg).toBeGreaterThan(4.7);

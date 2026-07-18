@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronDown, ChevronRight, Scale, Activity, NotebookPen, P
 import { C } from "../theme.js";
 import { num, r0, r1 } from "../lib/util.js";
 import { kcalPerG } from "../lib/foods.js";
-import { groupByDay, median } from "../lib/series.js";
+import { groupByDay, median, localDateOf, manualWeighInStamp } from "../lib/series.js";
 import { WEIGH_METHODS, DEFAULT_METHOD, WEIGH_SOURCES } from "../lib/expenditure.js";
 import { toDisplayWeight, fromDisplayWeight, weightLabel } from "../lib/units.js";
 import { DEMO_CAT_ID } from "../lib/catStore.js";
@@ -12,7 +12,10 @@ import FoodSearch from "../components/FoodSearch.jsx";
 import { Field, NumInput, Note } from "../components/primitives.jsx";
 import CatMark from "../components/CatMark.jsx";
 
-const today = () => new Date().toISOString().slice(0, 10);
+// LOCAL date (see lib/series.js localDateOf) — a date-picker defaulting to "today" should mean
+// the owner's today, not whatever day it already is in UTC (which flips early near midnight
+// in a western timezone).
+const today = () => localDateOf(Date.now());
 const methodLabel = (m) => (WEIGH_METHODS[m] || WEIGH_METHODS[DEFAULT_METHOD]).label;
 const INITIAL_DAYS = 5;
 
@@ -71,8 +74,15 @@ function WeightLog({ log, unit, lastMethod, onMethod }) {
   const chooseMethod = (m) => { setMethod(m); onMethod?.(m); }; // remember last-used across sessions
   const [open, setOpen] = useState(() => new Set()); // expanded day → shows individual reads
   const days = groupByDay(log.items);
+  // manualWeighInStamp stamps a real time-of-day `ts` only when the picked date IS today (a
+  // live "log now") — a backfilled entry for a past day has no actual time behind it, so it
+  // stays untimed (see the Log display below: entries without `ts` show nothing extra, no
+  // dash clutter).
   const addEntry = () => {
-    if (num(val) > 0) { log.add({ date, kg: fromDisplayWeight(num(val), unit), method, source: WEIGH_SOURCES.manual }); setVal(""); }
+    if (num(val) > 0) {
+      log.add({ ...manualWeighInStamp(date), kg: fromDisplayWeight(num(val), unit), method, source: WEIGH_SOURCES.manual });
+      setVal("");
+    }
   };
   const methodsUsed = new Set(log.items.map((e) => e.method).filter(Boolean));
   const toggleDay = (d) => setOpen((s) => { const n = new Set(s); n.has(d) ? n.delete(d) : n.add(d); return n; });
@@ -93,7 +103,10 @@ function WeightLog({ log, unit, lastMethod, onMethod }) {
           <div className="pl-4 py-1 space-y-0.5">
             {items.map((en) => (
               <div key={en.id} className="flex items-center justify-between text-xs font-mono">
-                <span style={{ color: C.faint }}>{en.method ? methodLabel(en.method) : "—"}{en.source === WEIGH_SOURCES.litterRobot ? " · auto" : ""}</span>
+                <span style={{ color: C.faint }}>
+                  {en.method ? methodLabel(en.method) : "—"}{en.source === WEIGH_SOURCES.litterRobot ? " · auto" : ""}
+                  {en.ts != null && <span style={{ color: C.faint }}> · {new Date(en.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>}
+                </span>
                 <span className="flex items-center gap-2"><span style={{ color: C.sub }} className="tabular-nums">{r1(toDisplayWeight(num(en.kg), unit))} {weightLabel(unit)}</span>
                   <button onClick={() => log.remove(en.id)} style={{ color: C.faint }}><X size={12} /></button></span>
               </div>

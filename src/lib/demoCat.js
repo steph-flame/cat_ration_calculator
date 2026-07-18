@@ -65,6 +65,12 @@ function buildProfile(today) {
 // day-to-day noise. Mostly Litter-Robot reads (noisier, automatic) with occasional manual
 // pet-scale check-ins — the mix the real Litter-Robot integration produces for an active
 // connection, per lib/litterRobot.js / lib/expenditure.js's WEIGH_SOURCES/WEIGH_METHODS.
+//
+// Each read also gets a `ts` (epoch ms), scattered 6am-11pm — litter-box visits through the
+// day, same as a real Litter-Robot feed — so the Log page's per-entry local time actually has
+// something to show. `T00:00:00` (no `Z`) parses as LOCAL midnight per spec, so the ts's own
+// local calendar date always lines up with `date` above regardless of which timezone this
+// runs in — no separate localDateOf reconciliation needed.
 function buildWeightLog(rand, startDate, nextId) {
   const entries = [];
   for (let day = 0; day < HISTORY_DAYS; day++) {
@@ -72,12 +78,19 @@ function buildWeightLog(rand, startDate, nextId) {
     const frac = day / (HISTORY_DAYS - 1);
     const baseKg = START_KG + (END_KG - START_KG) * frac;
     const nReads = 2 + Math.floor(rand() * 3); // 2-4
+    const localMidnight = new Date(`${date}T00:00:00`).getTime();
+    const reads = [];
     for (let r = 0; r < nReads; r++) {
       const manual = rand() < 0.2; // occasional manual pet-scale read, mostly Litter-Robot
       const noise = (rand() - 0.5) * (manual ? 0.05 : 0.09);
       const kg = Math.round((baseKg + noise) * 100) / 100;
+      const hour = 6 + rand() * 17; // scattered 6am-11pm
+      reads.push({ kg, manual, ts: localMidnight + Math.round(hour * 3600000) });
+    }
+    reads.sort((a, b) => a.ts - b.ts); // chronological within the day, for a tidy display
+    for (const { kg, manual, ts } of reads) {
       entries.push({
-        id: nextId(), date, kg,
+        id: nextId(), date, kg, ts,
         method: manual ? "petScale" : "litterRobot",
         source: manual ? WEIGH_SOURCES.manual : WEIGH_SOURCES.litterRobot,
       });

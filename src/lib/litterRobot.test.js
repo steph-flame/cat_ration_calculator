@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { LB_PER_KG } from "./units.js";
 import { WEIGH_SOURCES } from "./expenditure.js";
+import { localDateOf } from "./series.js";
 import {
   parseWeightEvents, dedupeWeightEntries, decodeJwtPayload,
   login, refreshIdToken, listRobots, fetchWeightActivity,
@@ -18,9 +19,11 @@ const catWeightEvent = (lb, iso) => ({ measure: "activity", value: "catWeight", 
 
 describe("parseWeightEvents", () => {
   it("converts lbs to kg and tags method/source", () => {
-    const [e] = parseWeightEvents([catWeightEvent(10, "2026-01-01T12:00:00Z")]);
+    const iso = "2026-01-01T12:00:00Z";
+    const [e] = parseWeightEvents([catWeightEvent(10, iso)]);
     expect(e.kg).toBeCloseTo(10 / LB_PER_KG, 6);
-    expect(e.date).toBe("2026-01-01");
+    // `date` is the LOCAL calendar date of `ts`, not a UTC slice — see lib/series.js localDateOf.
+    expect(e.date).toBe(localDateOf(Date.parse(iso)));
     expect(e.method).toBe("litterRobot");
     expect(e.source).toBe(WEIGH_SOURCES.litterRobot);
     expect(typeof e.ts).toBe("number");
@@ -55,33 +58,53 @@ describe("parseWeightEvents", () => {
   });
 
   it("preserves multiple readings on the same day", () => {
+    // 1 hour apart (not the previous 12h spread) so this can't straddle local midnight under
+    // any realistic runtime timezone — the point here is "not deduped/merged", not the exact
+    // calendar date (see the `date`-derivation tests below for that).
     const events = [
-      catWeightEvent(9.1, "2026-02-01T08:00:00Z"),
-      catWeightEvent(9.3, "2026-02-01T20:00:00Z"),
+      catWeightEvent(9.1, "2026-02-01T10:00:00Z"),
+      catWeightEvent(9.3, "2026-02-01T11:00:00Z"),
     ];
     const out = parseWeightEvents(events);
     expect(out).toHaveLength(2);
-    expect(out.every((e) => e.date === "2026-02-01")).toBe(true);
+    expect(out[0].date).toBe(out[1].date);
   });
 
   it("orders output oldest-first regardless of input order", () => {
+    // Noon UTC, one full day apart — safely mid-day in any realistic timezone, so local-date
+    // derivation can't reorder or collide these regardless of where this test runs.
     const events = [
-      catWeightEvent(9, "2026-01-03T00:00:00Z"),
-      catWeightEvent(9, "2026-01-01T00:00:00Z"),
-      catWeightEvent(9, "2026-01-02T00:00:00Z"),
+      catWeightEvent(9, "2026-01-03T12:00:00Z"),
+      catWeightEvent(9, "2026-01-01T12:00:00Z"),
+      catWeightEvent(9, "2026-01-02T12:00:00Z"),
     ];
     const out = parseWeightEvents(events);
-    expect(out.map((e) => e.date)).toEqual(["2026-01-01", "2026-01-02", "2026-01-03"]);
+    expect(out.map((e) => e.ts)).toEqual([...out.map((e) => e.ts)].sort((a, b) => a - b));
+    expect(out.map((e) => e.date)).toEqual(out.map((e) => localDateOf(e.ts))); // wired through localDateOf
+    expect(out[0].date < out[1].date && out[1].date < out[2].date).toBe(true); // and strictly increasing
   });
 
-  it("accepts epoch-seconds and epoch-ms timestamps", () => {
-    const seconds = Math.floor(Date.parse("2026-03-01T00:00:00Z") / 1000);
-    const ms = Date.parse("2026-03-02T00:00:00Z");
+  it("accepts epoch-seconds and epoch-ms timestamps, normalizing both to the same ms ts", () => {
+    const tsA = Date.parse("2026-03-01T12:00:00Z");
+    const tsB = Date.parse("2026-03-02T12:00:00Z");
+    const seconds = Math.floor(tsA / 1000);
     const out = parseWeightEvents([
       { measure: "activity", value: "catWeight", actionValue: "9", timestamp: seconds },
-      { measure: "activity", value: "catWeight", actionValue: "9", timestamp: ms },
+      { measure: "activity", value: "catWeight", actionValue: "9", timestamp: tsB },
     ]);
-    expect(out.map((e) => e.date)).toEqual(["2026-03-01", "2026-03-02"]);
+    expect(out.map((e) => e.ts)).toEqual([tsA, tsB]);
+    expect(out.map((e) => e.date)).toEqual([localDateOf(tsA), localDateOf(tsB)]);
+  });
+
+  it("derives `date` from ts in LOCAL time, not a UTC slice — an evening visit stays on today's local date even if that's already tomorrow in UTC", () => {
+    // 11pm on some explicit LOCAL wall-clock day. If this runtime is west of UTC, that's
+    // already tomorrow in UTC — the exact bug this fixes (see lib/litterRobot.js banner).
+    // Round-tripped through an ISO string (as a real event's timestamp would arrive).
+    const local11pm = new Date(2026, 5, 15, 23, 0, 0);
+    const ts = local11pm.getTime();
+    const [e] = parseWeightEvents([catWeightEvent(9, new Date(ts).toISOString())]);
+    expect(e.date).toBe(localDateOf(ts));
+    expect(e.date).toBe("2026-06-15"); // the LOCAL day it happened, regardless of this runtime's UTC offset
   });
 });
 
@@ -358,20 +381,31 @@ describe("parseWeightEventsLR5", () => {
   });
 
   it("preserves multiple readings on the same day, oldest first", () => {
+    // 1 hour apart (not the previous 12h spread) so this can't straddle local midnight under
+    // any realistic runtime timezone.
     const events = [
-      petVisit(920, "2026-07-01T20:00:00Z"),
-      petVisit(937, "2026-07-01T08:00:00Z"),
+      petVisit(920, "2026-07-01T11:00:00Z"),
+      petVisit(937, "2026-07-01T10:00:00Z"),
     ];
     const { entries } = parseWeightEventsLR5(events);
     expect(entries).toHaveLength(2);
     expect(entries[0].ts).toBeLessThan(entries[1].ts);
-    expect(entries.every((e) => e.date === "2026-07-01")).toBe(true);
+    expect(entries[0].date).toBe(entries[1].date);
   });
 
   it("is a no-op on an empty or all-invalid batch", () => {
     expect(parseWeightEventsLR5([])).toEqual({ entries: [], weightScale: null });
     expect(parseWeightEventsLR5([petVisit(-5, "2026-01-01T00:00:00Z")])).toEqual({ entries: [], weightScale: null });
     expect(parseWeightEventsLR5([petVisit(937, "not-a-date")])).toEqual({ entries: [], weightScale: null });
+  });
+
+  it("derives `date` from ts in LOCAL time, not a UTC slice (same fix as LR4's parseWeightEvents)", () => {
+    const local11pm = new Date(2026, 5, 15, 23, 0, 0);
+    const ts = local11pm.getTime();
+    const { entries } = parseWeightEventsLR5([petVisit(9.4, new Date(ts).toISOString())]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].date).toBe(localDateOf(ts));
+    expect(entries[0].date).toBe("2026-06-15"); // the LOCAL day it happened, regardless of this runtime's UTC offset
   });
 });
 

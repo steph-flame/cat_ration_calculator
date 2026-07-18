@@ -12,7 +12,12 @@ const arrOf = (v, pred) => Array.isArray(v) && v.every(pred);
 // A ration/start/library row: name + mode are the load-bearing primitives. The macro
 // fields vary by mode and are often blank, so they're not pinned down further here.
 const isFoodEntry = (f) => isPlainObject(f) && typeof f.name === "string" && typeof f.mode === "string";
-const isWeightEntry = (e) => isPlainObject(e) && typeof e.date === "string" && typeof e.kg === "number";
+// `ts` (epoch ms the weigh-in actually happened) is optional — absent on any entry logged
+// before this field existed, and on a deliberately-backfilled past-day entry (see Log.jsx),
+// which has no real time-of-day behind it.
+const isWeightEntry = (e) =>
+  isPlainObject(e) && typeof e.date === "string" && typeof e.kg === "number"
+  && (e.ts === undefined || e.ts === null || typeof e.ts === "number");
 const isIntakeEntry = (e) => isPlainObject(e) && typeof e.date === "string" && typeof e.kcal === "number";
 
 // Per-day "incomplete" flags: { "YYYY-MM-DD": "incomplete" }. Only that one status exists so

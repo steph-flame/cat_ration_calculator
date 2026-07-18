@@ -47,6 +47,14 @@ describe("validateImport rejects malformed shapes", () => {
     expect(validateImport({ ...validExport(), weightLog: [{ date: "2026-01-01", kg: "4.4" }] })).toBe(false); // kg not a number
     expect(validateImport({ ...validExport(), intakeLog: [{ kcal: 250 }] })).toBe(false); // no date
   });
+  it("tolerates a weigh-in's optional `ts` (epoch ms) — absent on older entries and backfilled ones", () => {
+    expect(validateImport({ ...validExport(), weightLog: [{ date: "2026-01-01", kg: 4.4 }] })).toBe(true); // no ts at all
+    expect(validateImport({ ...validExport(), weightLog: [{ date: "2026-01-01", kg: 4.4, ts: null }] })).toBe(true);
+    expect(validateImport({ ...validExport(), weightLog: [{ date: "2026-01-01", kg: 4.4, ts: 1735689600000 }] })).toBe(true);
+  });
+  it("rejects a non-numeric `ts` on a weigh-in", () => {
+    expect(validateImport({ ...validExport(), weightLog: [{ date: "2026-01-01", kg: 4.4, ts: "not-a-number" }] })).toBe(false);
+  });
 });
 
 const validV2Export = () => ({

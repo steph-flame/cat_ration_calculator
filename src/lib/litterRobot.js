@@ -31,7 +31,7 @@
 
 import { LB_PER_KG } from "./units.js";
 import { WEIGH_SOURCES } from "./expenditure.js";
-import { median } from "./series.js";
+import { median, localDateOf } from "./series.js";
 
 export const COGNITO_REGION = "us-east-1";
 export const COGNITO_USER_POOL_ID = "us-east-1_rjhNnZVAm";
@@ -352,7 +352,7 @@ export function parseWeightEventsLR5(events = []) {
   const [weightScale, toKg] = winners[0];
   const entries = raw
     .map((r) => ({
-      date: new Date(r.ts).toISOString().slice(0, 10),
+      date: localDateOf(r.ts), // LOCAL day the visit happened on, not ts's UTC calendar date
       kg: toKg(r.w),
       method: "litterRobot",
       source: WEIGH_SOURCES.litterRobot,
@@ -405,7 +405,7 @@ export function parseWeightEvents(events = []) {
     if (!Number.isFinite(lb) || lb <= 0 || lb > GARBAGE_MAX_LB) continue;
     const ts = parseEventMs(e.timestamp);
     if (ts == null) continue;
-    const date = new Date(ts).toISOString().slice(0, 10);
+    const date = localDateOf(ts); // LOCAL day the visit happened on, not ts's UTC calendar date
     out.push({ date, kg: lb / LB_PER_KG, method: "litterRobot", source: WEIGH_SOURCES.litterRobot, ts });
   }
   out.sort((a, b) => a.ts - b.ts);

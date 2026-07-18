@@ -35,6 +35,29 @@ export function dailyReduce(entries, reduce) {
     .map(([date, vals]) => ({ date, value: reduce(vals) }));
 }
 
+// Local-calendar date (YYYY-MM-DD) for an epoch-ms timestamp — deliberately LOCAL, not UTC
+// (unlike addDays/diffDays/enumerateDays above, which operate on date-ONLY strings and stay
+// in UTC on purpose so DST never shifts a day). A weigh-in's `ts` is a real moment in time,
+// and the day it "happened on" is whatever day it was on the clock on the wall where the cat
+// lives — an 11pm Litter-Robot visit in a western timezone is UTC-tomorrow but still today,
+// locally. Uses the Date object's local getters (not toISOString, which is always UTC), so
+// this reads the runtime's configured timezone rather than assuming one.
+export function localDateOf(ts) {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// A manual weigh-in's { date, ts } stamp: the owner-picked date, plus a real ts ONLY when
+// that date is today (a live "log now") — a backfilled past (or future-dated) entry has no
+// actual time-of-day behind it, so it's stamped date-only (see Log.jsx's per-entry time
+// display, which shows nothing for a ts-less entry). Pure — nowTs is injectable for testing.
+export function manualWeighInStamp(pickedDate, nowTs = Date.now()) {
+  return pickedDate === localDateOf(nowTs) ? { date: pickedDate, ts: nowTs } : { date: pickedDate };
+}
+
 // Group dated entries by day → [{ date, items }], newest day first. Generic (the
 // intake-log display and the chart's daily totals both use it).
 export function groupByDay(entries) {

@@ -7,7 +7,7 @@ import {
   migrateLegacyFood, ensureBuiltins, sumPct, blankFood, normalizePct, waterfall,
 } from "../lib/foods.js";
 import { estimateExpenditure, kalmanEstimateExpenditure, ucEstimateExpenditure, WEIGH_SOURCES, DEFAULT_METHOD } from "../lib/expenditure.js";
-import { groupByDay, median } from "../lib/series.js";
+import { groupByDay, median, localDateOf, manualWeighInStamp } from "../lib/series.js";
 import { usePersistence, store, probeStorage } from "../lib/storage.js";
 import { useFoodLibrary } from "../hooks/useFoodLibrary.js";
 import {
@@ -236,8 +236,14 @@ export function AppProvider({ children }) {
   const currentWeight = weightDays.length
     ? { kg: median(weightDays[0].items.map((e) => num(e.kg))), date: weightDays[0].date, fromLog: true }
     : { kg: num(p.weightKg), date: null, fromLog: false };
-  const logWeight = ({ kg, method }) =>
-    weightLog.add({ date: today, kg, method: method || expSettings.lastMethod || DEFAULT_METHOD, source: WEIGH_SOURCES.manual });
+  // Always a live "log now" (no date picker here — that's Log.jsx's backfill flow), so this
+  // always gets a real `ts`; manualWeighInStamp derives `date` from it in LOCAL time — not
+  // the `today` above (a UTC-sliced string, fine for ages/demo-cat but wrong for "what day
+  // did this weigh-in happen on" near midnight in a non-UTC timezone). See lib/series.js.
+  const logWeight = ({ kg, method }) => {
+    const ts = Date.now();
+    weightLog.add({ ...manualWeighInStamp(localDateOf(ts), ts), kg, method: method || expSettings.lastMethod || DEFAULT_METHOD, source: WEIGH_SOURCES.manual });
+  };
 
   const t = useMemo(() => computeTargets({ ...p, ageMonths: effAgeMonths, weightKg: currentWeight.kg }), [p, effAgeMonths, currentWeight.kg]);
   const expenditure = useMemo(() => {
