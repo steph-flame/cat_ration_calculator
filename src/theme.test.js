@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SKINS, DEFAULT_SKIN, mutedIntake } from "./theme.js";
+import { SKINS, DEFAULT_SKIN, mutedIntake, deriveSkin } from "./theme.js";
 
 const REQUIRED_KEYS = ["ground", "card", "line", "ink", "soft", "accent", "second", "ok", "data1", "data2"];
 const HEX = /^#[0-9A-Fa-f]{6}$/;
@@ -88,4 +88,117 @@ describe("mutedIntake (the chart intake line color)", () => {
     expect(muted).not.toBe(base.ok);
     expect(muted).not.toBe(base.ink);
   });
+});
+
+// --- Contrast floor ---------------------------------------------------------------------
+// Locks in the audit that retuned `line`/`faint` (and original's `accent`, blossom's
+// `ok`/`second`/`data1`) — see theme.js's "Contrast audit" comment above SKINS. This walks
+// every token pairing actually used across the app's components (grepped from
+// src/components + src/pages: color:/background:/fill:/stroke: usages), per skin, against
+// WCAG thresholds:
+//   - "text-normal" >= 4.5:1 — regular body/caption/label text (nothing in this app's actual
+//     usage of these tokens is >=18px, or >=14px AND bold, so no token gets the 3:1 large-text
+//     exemption even where it's rendered at a big font size elsewhere — verified per-pairing
+//     below by checking the SMALLEST context each token is actually used at).
+//   - "text-large" >= 3:1 — only granted where the *specific* usage is verified >=24px, or
+//     >=18.66px (14pt) AND bold (e.g. the CatMenu headline trigger, which inherits the h1's
+//     28-32px bold; the big kcal figures at 30-48px bold).
+//   - "nontext" >= 3:1 — essential non-text UI (WCAG 1.4.11): chart lines, meter tracks/rings,
+//     component borders, the BowlCard segment-transition divider.
+// Decorative-only pairings (soft zone-band fills, the confidence band's low-opacity fill, the
+// bowl's translucent food wash, DayStrip's selection/hover pill) are deliberately NOT gated
+// here: in every case the same information is also carried by real text/position elsewhere
+// (numeric low/high labels + status message; the sr-only data table; the dispensed/target
+// numbers; aria-pressed + the day panel shown below) — see the inline notes on each skipped
+// row in the `pairs()` builder for the specific duplication in each case.
+const clampByte = (n) => Math.max(0, Math.min(255, Math.round(n)));
+const hexToRgbLocal = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const rgbToHexLocal = (rgb) => `#${rgb.map((v) => clampByte(v).toString(16).padStart(2, "0")).join("")}`;
+const flatten = (fgHex, bgHex, alpha) => {
+  const a = hexToRgbLocal(fgHex), b = hexToRgbLocal(bgHex);
+  return rgbToHexLocal(a.map((v, i) => v * alpha + b[i] * (1 - alpha)));
+};
+const contrastRatio = (h1, h2) => {
+  const [a, b] = [relLum(h1), relLum(h2)].sort((x, y) => y - x);
+  return (a + 0.05) / (b + 0.05);
+};
+
+const THRESH = { "text-normal": 4.5, "text-large": 3, nontext: 3 };
+
+// Every GATED pairing actually used in the app (see src/components/{TimelineChart,DayStrip,
+// BowlMark}.jsx and src/pages/{Home,Expenditure,Log,RationPlanner,Cats,Settings}.jsx for the
+// underlying color:/background:/fill:/stroke: usages this mirrors). Decorative-only pairings
+// (documented above) are intentionally excluded from this list, not included-and-skipped.
+function gatedPairs(name) {
+  const s = deriveSkin(SKINS[name]);
+  const white = "#FFFFFF";
+  const P = [];
+  const add = (label, role, fgHex, bgHex) => P.push({ label, role, fgHex, bgHex });
+
+  // text on ground
+  add("ink text on ground (body copy)", "text-normal", s.ink, s.ground);
+  add("sub text on ground (subtitle, 15px)", "text-normal", s.soft, s.ground);
+  add("faint text on ground (captions, <=13px)", "text-normal", s.faint, s.ground);
+  add("accent text on ground (masthead label, 10.5px mono)", "text-normal", s.accent, s.ground);
+  add("second/spruce text on ground (CatMenu headline trigger, inherits h1 28-32px bold)", "text-large", s.second, s.ground);
+  // text on card
+  add("ink text on card (values, inputs)", "text-normal", s.ink, s.card);
+  add("sub text on card (labels, 11-15px)", "text-normal", s.soft, s.card);
+  add("faint text on card (captions/chart tick labels, 9-11px)", "text-normal", s.faint, s.card);
+  add("accent/amber text on card — small (rate value 14px, Home fig 12px)", "text-normal", s.accent, s.card);
+  add("accent/amber text on card — large (kcal figures, 36-48px bold)", "text-large", s.accent, s.card);
+  add("second/spruce text on card — small (links, xs 12px)", "text-normal", s.second, s.card);
+  add("second/spruce text on card — large (maintenance kcal, 30-48px bold)", "text-large", s.second, s.card);
+  add("warn text on card — small (Cats.jsx warn links/buttons, xs)", "text-normal", s.warn, s.card);
+  // text on soft-tint chips
+  add("warn text on warnSoft (Settings danger banner)", "text-normal", s.warn, s.warnSoft);
+  add("ok text on okSoft (Pill 'safe' badge, 11.5px bold)", "text-normal", s.ok, s.okSoft);
+  add("second/spruce text on secondSoft (Home dot label, LR badge)", "text-normal", s.second, s.secondSoft);
+  add("accent/amber icon on accentSoft (Home dot icon, 20px glyph)", "nontext", s.accent, s.accentSoft);
+  // white text on solid brand fills
+  add("white text on second/spruce (selected tab pill, buttons)", "text-normal", white, s.second);
+  add("white text on warn (erase-all button)", "text-normal", white, s.warn);
+  // borders/hairlines — real UI-component boundaries (input fields, segmented controls, meter
+  // tracks), not purely decorative dividers
+  add("line hairline on ground (segmented-control border etc.)", "nontext", s.line, s.ground);
+  add("line color on card (input/card border, meter-track background)", "nontext", s.line, s.card);
+  // chart marks (TimelineChart lives inside a C.card section)
+  add("CHART.weight line (ink) on card", "nontext", s.ink, s.card);
+  add("CHART.expenditure line (data1===ok) on card", "nontext", s.data1, s.card);
+  add("CHART.intake line (mutedIntake) on card, stroke-opacity .85", "nontext", flatten(s.intake, s.card, 0.85), s.card);
+  // DayStrip (rendered directly on page ground, not inside a card)
+  add("DayStrip intake bar fill (mutedIntake) vs ground", "nontext", s.intake, s.ground);
+  add("DayStrip weight dot/line (ink) vs ground", "nontext", s.ink, s.ground);
+  // BowlMark (inside Home's card)
+  add("BowlMark fill-surface line (solid accent stroke) vs card", "nontext", s.accent, s.card);
+  add("BowlMark ink outline (rim/body/foot) vs card", "nontext", s.ink, s.card);
+  // BowlCard zone-bar: the fills themselves are decorative (see file-level note), but the
+  // always-drawn segment-transition divider and the nutritional-floor marker are real
+  // non-text UI and must clear the floor against BOTH fills they can sit next to.
+  add("BowlCard segment-transition divider (C.sub) vs warnSoft fill", "nontext", s.soft, s.warnSoft);
+  add("BowlCard segment-transition divider (C.sub) vs okSoft fill", "nontext", s.soft, s.okSoft);
+  add("BowlCard nutritional-floor marker (solid warn) vs warnSoft segment", "nontext", s.warn, s.warnSoft);
+  add("BowlCard nutritional-floor marker (solid warn) vs okSoft segment", "nontext", s.warn, s.okSoft);
+  add("BowlCard/meter track (C.line) vs card", "nontext", s.line, s.card);
+  // WeightBand / ConfidenceBand meters: every position marker is a solid dot with a 2px
+  // C.card ring (see borderColor: C.card on each) — the ring-vs-track pairing is the real
+  // on-track visibility mechanism, in addition to the dot-vs-its-own-fill check.
+  add("WeightBand dot (solid ok) vs its own safe-zone fill (okSoft)", "nontext", s.ok, s.okSoft);
+  add("marker's card-colored ring vs track (line)", "nontext", white, s.line);
+  add("ConfidenceBand dot (solid accent) vs its own fill (accentSoft)", "nontext", s.accent, s.accentSoft);
+
+  return P;
+}
+
+describe("contrast floor (WCAG 1.4.3 text / 1.4.11 non-text, per skin)", () => {
+  for (const name of Object.keys(SKINS)) {
+    const pairs = gatedPairs(name);
+    it.each(pairs.map((p) => [p.label, p]))(`${name}: %s`, (_label, p) => {
+      const ratio = contrastRatio(p.fgHex, p.bgHex);
+      expect(ratio, `${p.fgHex} on ${p.bgHex} — got ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(THRESH[p.role]);
+    });
+  }
 });

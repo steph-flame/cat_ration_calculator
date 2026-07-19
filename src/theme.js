@@ -17,17 +17,29 @@
 // file: weight uses `ink` (neutral — it's the observed ground truth, not a modeled series),
 // expenditure uses `data1` alone (no longer shared with weight), intake uses the derived,
 // desaturated `intake` token (see below), and the confidence band is `data1` at low opacity.
+// Contrast audit (see src/theme.test.js's "contrast floor" describe block, and the scratch
+// measurement script referenced there): every text/UI-element pairing actually used across the
+// app was measured against WCAG 1.4.3/1.4.11 thresholds, per skin. Two categories of locked hex
+// below were retuned as a direct result, both minimally — same hue, nudged for legibility:
+//   - `line`: was a barely-there hairline (~1.2:1 against both ground and card) — invisible as an
+//     input-field/segmented-control boundary, which is exactly the "reads too low-contrast"
+//     complaint. Retuned to mix(soft, ground, 0.72) per skin (still each skin's own neutral cast,
+//     just dark enough to read as a real border, ~3.2-3.5:1 against card).
+//   - `accent` (original only) and `ok`/`second`/`data1` (blossom only): each was a hair under
+//     4.5:1 in at least one real on-card/on-ground text usage (original's accent as the masthead
+//     label text; blossom's sage `ok` as Pill/chip text on its own 13%-tint background — the
+//     reported "Blossom" worst case). Both nudged darker by <10%, same hue — not a hue swap.
 export const SKINS = {
   original: {
-    ground: "#FAF6EE", card: "#FFFFFF", line: "#EAE2D3", ink: "#33302A", soft: "#655F50",
-    accent: "#B05A36", second: "#54704F", ok: "#54704F", data1: "#54704F", data2: "#B05A36",
+    ground: "#FAF6EE", card: "#FFFFFF", line: "#8F897C", ink: "#33302A", soft: "#655F50",
+    accent: "#A75633", second: "#54704F", ok: "#54704F", data1: "#54704F", data2: "#A75633",
   },
   blossom: {
-    ground: "#FAF5F2", card: "#FFFFFF", line: "#EDDFE0", ink: "#362C31", soft: "#6E5C64",
-    accent: "#A8465E", second: "#5F7767", ok: "#5F7767", data1: "#5F7767", data2: "#A8465E",
+    ground: "#FAF5F2", card: "#FFFFFF", line: "#95878C", ink: "#362C31", soft: "#6E5C64",
+    accent: "#A8465E", second: "#586F60", ok: "#586F60", data1: "#586F60", data2: "#A8465E",
   },
   tidepool: {
-    ground: "#F0F5F4", card: "#FFFFFF", line: "#DBE5E3", ink: "#22312F", soft: "#526562",
+    ground: "#F0F5F4", card: "#FFFFFF", line: "#7E8D8B", ink: "#22312F", soft: "#526562",
     accent: "#B04E38", second: "#26655F", ok: "#26655F", data1: "#26655F", data2: "#B04E38",
   },
   spruce: {
@@ -35,7 +47,7 @@ export const SKINS = {
     // (spruce green) is what happens to also be the safe-state green, and second (amber)
     // is NOT safe-colored. ok is pinned to accent, not second, so a safe pill never renders
     // amber in this skin.
-    ground: "#F4F6F3", card: "#FFFFFF", line: "#DFE5DF", ink: "#232A26", soft: "#59645C",
+    ground: "#F4F6F3", card: "#FFFFFF", line: "#848D86", ink: "#232A26", soft: "#59645C",
     accent: "#3E5C50", second: "#8A5A12", ok: "#3E5C50", data1: "#3E5C50", data2: "#8A5A12",
   },
 };
@@ -76,7 +88,7 @@ export const mutedIntake = (base) => mix(base.data2, base.soft, 0.5);
 
 // The full resolved token set for one skin: its locked hexes plus the derived soft tints and
 // the tertiary text tone, plus the fixed warning colors.
-function deriveSkin(base) {
+export function deriveSkin(base) {
   return {
     ...base,
     accentSoft: mix(base.accent, "#FFFFFF", 0.13),
@@ -84,7 +96,11 @@ function deriveSkin(base) {
     // Its own soft tint (not just reused from secondSoft) because in the spruce skin ok
     // diverges from second — a safe-zone fill must stay green-tinted there too.
     okSoft: mix(base.ok, "#FFFFFF", 0.13),
-    faint: mix(base.soft, base.ground, 0.55),
+    // Contrast audit: at 0.55 this was ~2.3-2.5:1 against both ground and card in every skin —
+    // a caption/tertiary text token that fails 4.5:1 everywhere it's actually used (chart tick
+    // labels, hints), which is real text, not decoration. 0.90 clears >=4.5:1 against both
+    // ground and card in all four skins with margin (see theme.test.js's contrast-floor block).
+    faint: mix(base.soft, base.ground, 0.90),
     intake: mutedIntake(base),
     warn: WARN,
     warnSoft: WARN_SOFT,

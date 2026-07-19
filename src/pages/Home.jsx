@@ -229,9 +229,22 @@ function BowlCard({ dispensedKcal, target, direction, maintenance, floorKcal, ta
             <div style={{ left: 0, width: `${lowPos}%`, background: C.warnSoft }} className="absolute inset-y-0" />
             <div style={{ left: `${lowPos}%`, width: `${highPos - lowPos}%`, background: C.okSoft }} className="absolute inset-y-0" />
             <div style={{ left: `${highPos}%`, width: `${100 - highPos}%`, background: C.warnSoft }} className="absolute inset-y-0" />
-            {/* the real nutritional floor's boundary, marked distinctly from the plain ±10%
-                fallback edge — a solid accent line, since the theme has no separate danger
-                token to lean on for a stronger fill tint */}
+            {/* Contrast audit: warnSoft and okSoft are both pale ~13%-tint pastels — WCAG
+                contrast is luminance-based, not hue-based, so no matter how far apart their
+                hues sit, the two fills measure ~1.0-1.1:1 against each other (verified: pushing
+                the tint stronger only asymptotes toward the full warn-vs-ok hue contrast, and
+                getting there would mean abandoning the soft/decorative fill this bar is meant to
+                have). So the boundary between "off-plan" and "on-plan" is marked explicitly here
+                instead, with a always-drawn C.sub divider (~5-5.5:1 against either fill in every
+                skin) at both edges — the segments themselves stay decorative (their meaning is
+                duplicated by the low/high numbers and status message below), but the transition
+                between them is now a real, always-visible non-text UI boundary. */}
+            <div style={{ left: `${lowPos}%`, background: C.sub }} className="absolute inset-y-0 w-px -translate-x-1/2" />
+            <div style={{ left: `${highPos}%`, background: C.sub }} className="absolute inset-y-0 w-px -translate-x-1/2" />
+            {/* the real nutritional floor's boundary (when there is one, vs. the plain ±10%
+                fallback edge) gets its own stronger, wider marker on top of the divider above —
+                a solid warn line, since the theme has no separate danger token to lean on for a
+                stronger fill tint */}
             {zones.floorKcal != null && (
               <div style={{ left: `${lowPos}%`, background: C.warn }} className="absolute inset-y-0 w-[2px] -translate-x-1/2" />
             )}
