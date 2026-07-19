@@ -6,8 +6,9 @@ import { r0, r1, clamp } from "../lib/util.js";
 import { toDisplayWeight, weightLabel, weeklyRate } from "../lib/units.js";
 import { resolveTarget } from "../lib/targeting.js";
 import { RATE } from "../lib/weightPlan.js";
-import { dispensedToday, dispenseProgress } from "../lib/dispenseProgress.js";
+import { dispensedToday, bowlFillPct, bowlZones, bowlStatus } from "../lib/dispenseProgress.js";
 import CatMark from "../components/CatMark.jsx";
+import BowlMark from "../components/BowlMark.jsx";
 import CatMenu from "../components/CatMenu.jsx";
 
 const greeting = () => {
@@ -35,7 +36,7 @@ export default function Home() {
   const tooFast = expenditure.enoughData && rateMag > RATE.max;
   const rateTone = !expenditure.enoughData ? null : tooFast ? "warn" : "ok";
 
-  const { target, measured, dir } = resolveTarget({ t, expenditure, expSettings });
+  const { target, measured, dir, maintenance, plan } = resolveTarget({ t, expenditure, expSettings });
   const targetLine = measured
     ? dir === "maintain" ? "measured maintenance" : `gentle ${dir === "gain" ? "surplus" : "trim"} · measured burn`
     : t.goalId === "custom" ? "your custom target" : "from the vet formula";
@@ -108,10 +109,7 @@ export default function Home() {
             {!kitten && <WeightBand weightKg={currentWeight.kg} idealKg={t.idealWeight} />}
           </StatCard>
 
-          <StatCard label="Tonight's bowl" value={`${r0(target)}`} unit="kcal">
-            <DispenseBar dispensedKcal={dispensedKcal} target={target} />
-            <span style={{ color: C.faint }} className="block text-[10.5px] mt-1">{targetLine}</span>
-          </StatCard>
+          <BowlCard dispensedKcal={dispensedKcal} target={target} direction={dir} maintenance={maintenance} floorKcal={plan?.floorKcal} targetLine={targetLine} />
 
           <StatCard label={`${name} burns`} value={expenditure.enoughData ? r0(expenditure.kcal) : "—"} unit={expenditure.enoughData ? `±${r0(1.96 * expenditure.sd)}` : null}>
             {expenditure.enoughData
@@ -185,29 +183,69 @@ function Caption({ children }) {
   return <span style={{ color: C.sub }} className="block text-[11.5px] mt-2">{children}</span>;
 }
 
-// Tonight's bowl progress bar — how much of the target has actually been dispensed today, not
-// just the target number (see lib/dispenseProgress.js for the pure percentage math). Same
-// visual family as the weight-vs-ideal band below: a thin C.line track, rounded. The ok-token
-// segment is "up to target"; a warn-token segment past it means the cat's had more than
-// tonight's plan calls for. Zero dispensed today (no entries at all, or an explicit 0-kcal
-// "nothing eaten" entry — either way a real, not missing, zero) shows as a fully empty track
-// with its own caption rather than a 0%-wide sliver of the ok color.
-function DispenseBar({ dispensedKcal, target }) {
-  const { fillPct, overPct, overKcal, isEmpty } = dispenseProgress(dispensedKcal, target);
-  const base = `${r0(dispensedKcal)} of ${r0(target)} kcal dispensed`;
-  const caption = isEmpty ? "nothing dispensed yet" : overKcal > 0 ? `${base} · +${r0(overKcal)} over` : base;
-  const ariaLabel = isEmpty
-    ? `Nothing dispensed yet — 0 of ${r0(target)} kcal`
-    : overKcal > 0
-      ? `${r0(dispensedKcal)} of ${r0(target)} kcal dispensed, ${r0(overKcal)} over target`
-      : `${r0(dispensedKcal)} of ${r0(target)} kcal dispensed`;
+// Tonight's bowl card — an ink-drawn BowlMark whose fill genuinely tracks dispensed/target
+// (see lib/dispenseProgress.js's bowlFillPct/bowlFillY), plus a banded zone bar underneath the
+// numbers replacing the old plain progress bar. The bands (bowlZones) aren't an arbitrary
+// ±% — they're the real acceptable range for the cat's actual feeding direction: on a loss
+// plan the floor is the nutritional floor (real lipidosis risk below it) and the ceiling is
+// measured maintenance (the deficit's simply gone at/above it); on a gain plan the floor is
+// maintenance (no surplus below it); on maintain, and whenever a measured maintenance/floor
+// isn't available (formula basis), it's an honest ±10% around target — see bowlZones for the
+// exact per-direction rule and its fallbacks. The status line (bowlStatus) is keyed to where
+// today's dispensed total actually sits against those bands, not just plain over/under target.
+function BowlCard({ dispensedKcal, target, direction, maintenance, floorKcal, targetLine }) {
+  const fillPct = bowlFillPct(dispensedKcal, target);
+  const zones = bowlZones({ target, direction, maintenance, floorKcal });
+  const status = bowlStatus({ dispensedKcal, target, zones });
+
+  const TONE_COLOR = { empty: C.faint, danger: C.warn, caution: C.warn, ok: C.ok, warn: C.warn };
+  const toneColor = TONE_COLOR[status.zone] || C.faint;
+
+  const toPct = (v) => clamp((v / zones.max) * 100, 0, 100);
+  const lowPos = toPct(zones.low);
+  const highPos = toPct(zones.high);
+  const dispensedPos = toPct(dispensedKcal);
+  const low = r0(zones.low), high = r0(zones.high);
+
+  const ariaLabel = `Tonight's bowl: ${r0(target)} kcal target, ${r0(dispensedKcal)} kcal dispensed so far. ` +
+    `On-plan range ${low} to ${high} kcal` +
+    `${zones.floorKcal != null ? `, nutritional floor at ${r0(zones.floorKcal)} kcal` : ""}` +
+    `${zones.maintenance != null ? `, measured maintenance ${r0(zones.maintenance)} kcal` : ""}. ${status.message}.`;
+
   return (
-    <div className="mt-2.5">
-      <div style={{ background: C.line }} role="img" aria-label={ariaLabel} className="relative h-[7px] rounded-full overflow-hidden">
-        {!isEmpty && <div style={{ width: `${fillPct}%`, background: C.ok }} className="absolute inset-y-0 left-0 rounded-full" />}
-        {overPct > 0 && <div style={{ left: `${fillPct}%`, width: `${overPct}%`, background: C.warn }} className="absolute inset-y-0 rounded-full" />}
+    <div style={{ background: C.card, borderColor: C.line }} role="group" aria-label={ariaLabel}
+      className="border rounded-2xl px-4 py-3.5">
+      <span style={{ color: C.sub }} className="block text-[11px] font-bold tracking-[0.06em] uppercase">Tonight's bowl</span>
+      <div className="flex items-center gap-3.5 mt-1.5 flex-wrap">
+        <BowlMark size={80} fillPct={fillPct} />
+        <div className="flex-1 min-w-[150px]">
+          <span className="block font-mono text-[25px] font-bold tabular-nums">
+            {r0(target)}<small style={{ color: C.sub }} className="text-xs font-medium ml-1">kcal</small>
+          </span>
+
+          <div aria-hidden="true" style={{ background: C.line }} className="relative h-[7px] rounded-full overflow-hidden mt-2">
+            <div style={{ left: 0, width: `${lowPos}%`, background: C.warnSoft }} className="absolute inset-y-0" />
+            <div style={{ left: `${lowPos}%`, width: `${highPos - lowPos}%`, background: C.okSoft }} className="absolute inset-y-0" />
+            <div style={{ left: `${highPos}%`, width: `${100 - highPos}%`, background: C.warnSoft }} className="absolute inset-y-0" />
+            {/* the real nutritional floor's boundary, marked distinctly from the plain ±10%
+                fallback edge — a solid accent line, since the theme has no separate danger
+                token to lean on for a stronger fill tint */}
+            {zones.floorKcal != null && (
+              <div style={{ left: `${lowPos}%`, background: C.warn }} className="absolute inset-y-0 w-[2px] -translate-x-1/2" />
+            )}
+            <div style={{ left: `${dispensedPos}%`, background: toneColor, borderColor: C.card }}
+              className="absolute top-1/2 w-3 h-3 rounded-full border-2 -translate-x-1/2 -translate-y-1/2" />
+          </div>
+          <div className="flex justify-between mt-1">
+            <span style={{ color: C.faint }} className="font-mono text-[9.5px]">0</span>
+            <span style={{ color: C.faint }} className="font-mono text-[9.5px] whitespace-nowrap">on plan {low}–{high}</span>
+            <span style={{ color: C.faint }} className="font-mono text-[9.5px]">{high}+</span>
+          </div>
+
+          <span style={{ color: toneColor }} className="block text-[11.5px] font-bold mt-1">{status.message}</span>
+          <span style={{ color: C.faint }} className="block text-[10.5px] mt-0.5">{targetLine}</span>
+        </div>
       </div>
-      <span style={{ color: C.faint }} className="block text-[10.5px] mt-1.5">{caption}</span>
     </div>
   );
 }
