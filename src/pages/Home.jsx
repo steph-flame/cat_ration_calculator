@@ -222,7 +222,7 @@ function BowlCard({ dispensedKcal, target, direction, maintenance, floorKcal, ta
         <BowlMark size={80} fillPct={fillPct} />
         <div className="flex-1 min-w-[150px]">
           <span className="block font-mono text-[25px] font-bold tabular-nums">
-            {r0(target)}<small style={{ color: C.sub }} className="text-xs font-medium ml-1">kcal</small>
+            {r0(dispensedKcal)}<span style={{ color: C.sub }} className="font-medium">/{r0(target)}</span><small style={{ color: C.sub }} className="text-xs font-medium ml-1">kcal</small>
           </span>
 
           <div aria-hidden="true" style={{ background: C.line }} className="relative h-[7px] rounded-full overflow-hidden mt-2">
