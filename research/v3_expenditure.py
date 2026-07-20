@@ -19,7 +19,7 @@ Run:  research/../scratchpad/venv/bin/python research/v3_expenditure.py
 """
 import numpy as np
 
-RHO = 8000.0  # kcal per kg of body-mass change (cat, fat-skewed)
+RHO = 7800.0  # kcal per kg of body-mass change (cat, fat-skewed) — matches src/lib/expenditure.js KCAL_PER_KG
 
 
 class Kalman:
